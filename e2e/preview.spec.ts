@@ -2,8 +2,8 @@ import { expect, test, type Page } from '@playwright/test'
 
 /**
  * The live preview, end to end in a real browser: paste input, type a filter
- * into CodeMirror, read what the Output pane shows. Expected values are what
- * jq 1.8.2 prints (pretty, so compared with whitespace collapsed).
+ * into CodeMirror, read the canvas and the Output pane. Expected values are
+ * what jq 1.8.2 prints (pretty, so compared with whitespace collapsed).
  */
 const USERS = '{"users": [{"name": "ada", "age": 36}, {"name": "grace", "age": 45}]}'
 const SCREENS = 'test-results/screens'
@@ -15,8 +15,8 @@ test.beforeEach(async ({ page }) => {
   pageErrors.set(page, errors)
   page.on('pageerror', (e) => errors.push(e))
   await page.goto('/')
-  // the parser has loaded once the pipeline strip shows the source node
-  await expect(page.getByRole('region', { name: 'Pipeline' }).getByRole('listitem').first()).toBeVisible()
+  // the parser has loaded once the canvas shows the source node
+  await expect(node(page, 'source: input')).toBeVisible()
 })
 
 test.afterEach(async ({ page }) => {
@@ -30,7 +30,11 @@ async function preview(page: Page, input: string, filter: string) {
   await page.keyboard.type(filter)
 }
 
-const output = (page: Page) => page.getByRole('region', { name: 'Output' }).locator('pre')
+const outputPane = (page: Page) => page.getByRole('region', { name: 'Output' })
+const output = (page: Page) => outputPane(page).locator('pre')
+/** A canvas node, by its accessible name: "kind: text". */
+const node = (page: Page, name: string) =>
+  page.getByRole('region', { name: 'Pipeline' }).getByRole('group', { name, exact: true })
 
 async function expectOutput(page: Page, input: string, filter: string, expected: string) {
   await preview(page, input, filter)
@@ -72,24 +76,73 @@ test.describe('keeps working', () => {
   test('writes @csv rows', async ({ page }) => {
     await expectOutput(page, USERS, '.users[] | [.name, .age] | @csv', '"\\"ada\\",36" "\\"grace\\",45"')
   })
+})
 
-  test('projects the pipeline alongside the output', async ({ page }) => {
+test.describe('the canvas', () => {
+  test('draws one node per stage, each with its own preview', async ({ page }) => {
     await expectOutput(page, USERS, '.users | sort_by(.age) | map(.name) | unique', '[ "ada", "grace" ]')
-    const kinds = page.getByRole('region', { name: 'Pipeline' }).locator('li > span:first-child')
-    await expect(kinds).toHaveText(['source', 'pick', 'sort_by', 'map', 'unique'])
-    await page.screenshot({ path: `${SCREENS}/pipeline.png` })
+    for (const name of ['source: input', 'pick: .users', 'sort_by: sort_by(.age)', 'map: map(.name)', 'unique: unique']) {
+      await expect(node(page, name)).toBeVisible()
+    }
+    await expect(node(page, 'map: map(.name)')).toContainText('1 value · ["ada","grace"]')
+    await page.screenshot({ path: `${SCREENS}/canvas.png` })
+  })
+
+  test('shows the preview of a clicked node, or one chosen with the keyboard', async ({ page }) => {
+    await expectOutput(page, USERS, '.users | map(.name)', '[ "ada", "grace" ]')
+
+    await node(page, 'pick: .users').click()
+    await expect(outputPane(page)).toContainText('.users · 1 value')
+    await expect(output(page)).toHaveText('[ { "name": "ada", "age": 36 }, { "name": "grace", "age": 45 } ]')
+
+    await node(page, 'map: map(.name)').focus()
+    await page.keyboard.press('Enter')
+    await expect(output(page)).toHaveText('[ "ada", "grace" ]')
+  })
+
+  test('marks a failing stage, and blocks the ones after it', async ({ page }) => {
+    await preview(page, USERS, '.users | map(.name + 1) | length')
+    await expect(node(page, 'map: map(.name + 1)')).toContainText('error')
+    await expect(node(page, 'custom: length')).toContainText('blocked by an earlier error')
+    await expect(output(page)).toHaveText(
+      'Blocked by an error in map map(.name + 1): string ("ada") and number (1) cannot be added',
+    )
+    await expect(node(page, 'pick: .users')).toContainText('1 value')
+  })
+})
+
+test.describe('sampling (invariant 4)', () => {
+  test('previews a sample, and Run full runs the whole program on the whole input', async ({ page }) => {
+    const big = JSON.stringify(Array.from({ length: 300 }, (_, i) => i))
+    await expectOutput(page, big, 'length', '200')
+    await expect(page.getByRole('status')).toHaveText(
+      'Previewing a sample: arrays cut to 200 items. Run full for the complete result.',
+    )
+    await page.screenshot({ path: `${SCREENS}/sampled.png` })
+
+    await page.getByRole('button', { name: 'Run full' }).click()
+    await expect(output(page)).toHaveText('300')
+    await expect(outputPane(page)).toContainText('Whole program on the whole input')
+    await expect(page.getByRole('status')).toHaveText('')
+
+    // an edit goes back to the sample
+    await page.getByRole('textbox', { name: 'jq filter source' }).click()
+    await page.keyboard.press('End')
+    await page.keyboard.type(' + 1')
+    await expect(output(page)).toHaveText('201')
   })
 })
 
 test.describe('errors, in jq’s words', () => {
-  test('compile error, with its caret', async ({ page }) => {
+  test('compile error, on the stage it belongs to, with its caret', async ({ page }) => {
     await expectError(
       page,
       USERS,
       '.users | map(.name',
       // regexes match the raw text: newlines and the caret's indentation included
-      /^syntax error, unexpected end of file, expecting ';' or '\)' at <top-level>, line 1, column 14:\n {4}\.users \| map\(\.name\n {17}\^\^\^\^\^$/,
+      /^syntax error, unexpected end of file, expecting ';' or '\)' at <top-level>, line 1, column 5:\n {4}map\(\.name\n {8}\^\^\^\^\^$/,
     )
+    await expect(node(page, 'custom: map(.name')).toContainText('error')
     await page.screenshot({ path: `${SCREENS}/compile-error.png` })
   })
 
@@ -97,8 +150,9 @@ test.describe('errors, in jq’s words', () => {
     await expectError(page, '1', '.foo', 'Cannot index number with string ("foo")')
   })
 
-  test('invalid input', async ({ page }) => {
+  test('invalid input, on the input node', async ({ page }) => {
     await expectError(page, '{"a":', '.', 'input is not valid JSON: Unfinished JSON term at EOF at line 1, column 5')
+    await expect(node(page, 'source: input')).toContainText('error')
   })
 
   test('halt_error message', async ({ page }) => {

@@ -1,26 +1,16 @@
 import { useEffect, useId, useMemo, useState, type ReactNode } from 'react'
 import { JqEditor } from './JqEditor.tsx'
-import { PipelineStrip } from './PipelineStrip.tsx'
+import { OutputPane } from './OutputPane.tsx'
+import { PipelineCanvas } from './PipelineCanvas.tsx'
 import { useAppStore } from './store.ts'
 import { useJqParser } from './useJqParser.ts'
-import { formatInWorker, PREVIEW_OUTPUT_LIMIT, runInWorker } from '../worker/client.ts'
+import { usePreviews } from './usePreviews.ts'
 
 /**
- * The end-to-end loop works before the graph exists. The user pastes JSON,
- * edits jq in CodeMirror (treated as one opaque filter for now), and sees live
- * output computed in the worker (invariant 4). The graph canvas joins once
- * parsing lands.
+ * Two views of one source string: the jq text (bottom left) and the pipeline
+ * graph projected from it (top right), each node previewing its own output on
+ * a sample of the input. The Output pane shows the selected node's preview.
  */
-type Preview =
-  | { status: 'empty' }
-  | { status: 'loading' }
-  | { status: 'ok'; text: string; truncated: boolean }
-  | { status: 'error'; message: string }
-
-function cleanMessage(e: unknown): string {
-  return String(e instanceof Error ? e.message : e).replace(/^Error:\s*/, '')
-}
-
 function useDebounced<T>(value: T, ms: number): T {
   const [debounced, setDebounced] = useState(value)
   useEffect(() => {
@@ -43,64 +33,57 @@ export function App() {
     () => (parser.status === 'ready' ? parser.parse(source) : null),
     [parser, source],
   )
+  const previews = usePreviews(model, input)
 
-  const [preview, setPreview] = useState<Preview>({ status: 'empty' })
-
-  useEffect(() => {
-    if (input.trim() === '') {
-      setPreview({ status: 'empty' })
-      return
-    }
-    let cancelled = false
-    setPreview({ status: 'loading' })
-    // The input goes to jq as raw text: JSON.parse here would reorder
-    // integer-like keys and round big numbers. jq formats the output too.
-    runInWorker(source, input)
-      .then(async (out) => ({
-        text: out.text === '' ? '' : await formatInWorker(out.text),
-        truncated: out.truncated,
-      }))
-      .then(({ text, truncated }) => {
-        if (!cancelled) setPreview({ status: 'ok', text, truncated })
-      })
-      .catch((e) => {
-        if (!cancelled) setPreview({ status: 'error', message: cleanMessage(e) })
-      })
-    return () => {
-      cancelled = true
-    }
-  }, [source, input])
+  // The selected node, or the last one: the program's result.
+  const selectedNodeId = useAppStore((s) => s.selectedNodeId)
+  const selectNode = useAppStore((s) => s.selectNode)
+  const nodes = model?.nodes ?? []
+  const picked = nodes.findIndex((n) => n.id === selectedNodeId)
+  const selectedIndex = picked === -1 ? nodes.length - 1 : picked
 
   return (
     <div className="flex h-full flex-col bg-neutral-950 text-neutral-100">
       <header className="flex items-center gap-2 border-b border-neutral-800 px-4 py-2">
         <h1 className="text-sm font-semibold tracking-tight">millrace</h1>
-        <span className="text-xs text-neutral-500">jq scratchpad</span>
+        <span className="text-xs text-neutral-400">jq scratchpad</span>
       </header>
 
-      <main className="grid flex-1 grid-cols-2 overflow-hidden">
-        <div className="flex min-h-0 flex-col border-r border-neutral-800">
-          <Pane label="Input JSON">
-            <textarea
-              aria-label="Input JSON"
-              spellCheck={false}
-              value={inputText}
-              onChange={(e) => setInputText(e.target.value)}
-              placeholder='{"users": [{"name": "ada"}]}'
-              className="h-full w-full resize-none bg-neutral-900 p-3 font-mono text-sm text-neutral-100 outline-none placeholder:text-neutral-600"
-            />
-          </Pane>
-          <Pane label="Output" className="border-t border-neutral-800">
-            <OutputView preview={preview} />
-          </Pane>
-        </div>
+      <main className="grid min-h-0 flex-1 grid-cols-[minmax(0,2fr)_minmax(0,3fr)] grid-rows-2">
+        <Pane label="Input JSON" className="border-b border-r border-neutral-800">
+          <textarea
+            aria-label="Input JSON"
+            spellCheck={false}
+            value={inputText}
+            onChange={(e) => setInputText(e.target.value)}
+            placeholder='{"users": [{"name": "ada"}]}'
+            className="h-full w-full resize-none bg-neutral-900 p-3 font-mono text-sm text-neutral-100 outline-none placeholder:text-neutral-500"
+          />
+        </Pane>
 
-        <div className="flex min-h-0 flex-col">
-          <Pane label="jq filter">
-            <JqEditor />
-          </Pane>
-          <PipelineStrip parser={parser} model={model} />
-        </div>
+        <Pane label="Pipeline" className="border-b border-neutral-800">
+          {model ? (
+            <PipelineCanvas
+              model={model}
+              results={previews.results}
+              running={previews.running}
+              selectedId={nodes[selectedIndex]?.id ?? null}
+              onSelect={selectNode}
+            />
+          ) : parser.status === 'error' ? (
+            <p className="p-3 font-mono text-sm text-red-400">Parser failed to load: {parser.message}</p>
+          ) : (
+            <p className="p-3 font-mono text-sm text-neutral-400">Loading parser…</p>
+          )}
+        </Pane>
+
+        <Pane label="jq filter" className="border-r border-neutral-800">
+          <JqEditor />
+        </Pane>
+
+        <Pane label="Output">
+          <OutputPane source={source} input={input} model={model} previews={previews} selectedIndex={selectedIndex} />
+        </Pane>
       </main>
     </div>
   )
@@ -110,50 +93,14 @@ function Pane(props: { label: string; className?: string; children: ReactNode })
   // Named by its heading, so each pane is a landmark region for screen readers.
   const headingId = useId()
   return (
-    <section aria-labelledby={headingId} className={`flex min-h-0 flex-1 flex-col ${props.className ?? ''}`}>
+    <section aria-labelledby={headingId} className={`flex min-h-0 min-w-0 flex-col ${props.className ?? ''}`}>
       <div
         id={headingId}
-        className="shrink-0 border-b border-neutral-800 px-3 py-1.5 text-xs font-medium uppercase tracking-wide text-neutral-500"
+        className="shrink-0 border-b border-neutral-800 px-3 py-1.5 text-xs font-medium uppercase tracking-wide text-neutral-400"
       >
         {props.label}
       </div>
       <div className="min-h-0 flex-1">{props.children}</div>
     </section>
   )
-}
-
-function OutputView({ preview }: { preview: Preview }) {
-  if (preview.status === 'empty') {
-    return <Hint>Paste JSON on the left to see output.</Hint>
-  }
-  if (preview.status === 'loading') {
-    return <Hint>Running…</Hint>
-  }
-  if (preview.status === 'error') {
-    return (
-      // whitespace-pre: compile errors are box-drawn diagrams that must not wrap
-      <pre className="h-full w-full overflow-auto whitespace-pre p-3 font-mono text-sm text-red-400">
-        {preview.message}
-      </pre>
-    )
-  }
-  if (preview.text === '') {
-    return <Hint>No output (filter produced an empty stream).</Hint>
-  }
-  return (
-    <div className="flex h-full flex-col">
-      {preview.truncated && (
-        <p role="status" className="shrink-0 border-b border-neutral-800 px-3 py-1.5 text-xs text-amber-300">
-          Output cut at {PREVIEW_OUTPUT_LIMIT / 1_000_000} MB; the filter produces more.
-        </p>
-      )}
-      <pre className="min-h-0 flex-1 overflow-auto p-3 font-mono text-sm text-neutral-100">
-        {preview.text}
-      </pre>
-    </div>
-  )
-}
-
-function Hint({ children }: { children: ReactNode }) {
-  return <div className="p-3 font-mono text-sm text-neutral-600">{children}</div>
 }
