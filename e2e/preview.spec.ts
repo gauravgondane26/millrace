@@ -1,40 +1,12 @@
 import { expect, test, type Page } from '@playwright/test'
+import { node, openApp, output, outputPane, preview, SCREENS, USERS } from './app.ts'
 
 /**
  * The live preview, end to end in a real browser: paste input, type a filter
  * into CodeMirror, read the canvas and the Output pane. Expected values are
  * what jq 1.8.2 prints (pretty, so compared with whitespace collapsed).
  */
-const USERS = '{"users": [{"name": "ada", "age": 36}, {"name": "grace", "age": 45}]}'
-const SCREENS = 'test-results/screens'
-
-const pageErrors = new WeakMap<Page, Error[]>()
-
-test.beforeEach(async ({ page }) => {
-  const errors: Error[] = []
-  pageErrors.set(page, errors)
-  page.on('pageerror', (e) => errors.push(e))
-  await page.goto('/')
-  // the parser has loaded once the canvas shows the source node
-  await expect(node(page, 'source: input')).toBeVisible()
-})
-
-test.afterEach(async ({ page }) => {
-  expect(pageErrors.get(page), 'uncaught errors on the page').toEqual([])
-})
-
-async function preview(page: Page, input: string, filter: string) {
-  await page.getByRole('textbox', { name: 'Input JSON' }).fill(input)
-  await page.getByRole('textbox', { name: 'jq filter source' }).click()
-  await page.keyboard.press('ControlOrMeta+a')
-  await page.keyboard.type(filter)
-}
-
-const outputPane = (page: Page) => page.getByRole('region', { name: 'Output' })
-const output = (page: Page) => outputPane(page).locator('pre')
-/** A canvas node, by its accessible name: "kind: text". */
-const node = (page: Page, name: string) =>
-  page.getByRole('region', { name: 'Pipeline' }).getByRole('group', { name, exact: true })
+openApp()
 
 async function expectOutput(page: Page, input: string, filter: string, expected: string) {
   await preview(page, input, filter)
