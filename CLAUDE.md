@@ -134,10 +134,10 @@ correctness-critical decision lives, so it is the part that gets tests.
 
 ## Status
 
-**Phases 1–5 done.** Paste JSON, edit jq in CodeMirror or on the React Flow
-canvas, and see a preview on every node; the Output pane shows the selected
-node's. Previews run stage by stage on a sample of the input; "Run full" runs the
-whole program on the whole input.
+**Phases 1–6 done.** Paste JSON, edit jq in CodeMirror, on the React Flow canvas
+or as fields in the Stage pane, and see a preview on every node; the Output pane
+shows the selected node's. Previews run stage by stage on a sample of the input;
+"Run full" runs the whole program on the whole input.
 
 - **Execution.** `src/worker/engine.ts` drives jq 1.8.2 itself (the `jq-wasm`
   package, pinned exactly), so previews are what jq produces. The engine was
@@ -173,13 +173,25 @@ whole program on the whole input.
   (click, or Enter on a focused node) is UI state in the store; with none, the
   last node is shown.
 - **Graph editing (invariants 2, 6, 7).** The selected node's card offers Edit
-  (also double-click or F2), Add after and Delete. `core/splice/edits.ts` turns
-  each into one minimal text change (a new stage copies the user's separator
-  style), and `src/ui/useGraphEdits.ts` dispatches it through the editor with
+  (its raw jq, in place; also double-click or F2), Add after (opens a form in the
+  Stage pane) and Delete. `core/splice/edits.ts` turns each into one minimal text
+  change (a new stage copies the user's separator style), and
+  `src/ui/useGraphEdits.ts` dispatches it through the editor with
   `graphEditSpec`, so it commits at once and undo covers it; Ctrl+Z on the canvas
   is the editor's undo. Edits re-project the editor's live text at the moment of
   the edit and name the text the node should hold, so a node that changed in the
   last 200 ms is refused rather than spliced at a stale range.
+- **Stage pane.** `src/ui/StagePane.tsx` shows the selected node as labelled
+  fields; `core/parse/kinds.ts` says which: select's predicate, map's
+  projection, sort_by/group_by's key, limit's count and generator, a pick path
+  (or `pick()`'s argument), a custom stage's whole text; source and unique have
+  none. A field edit splices only its argument (`replaceArg`), so
+  `select( .age > 40 )` keeps its spacing. Enter (Ctrl+Enter in the multi-line
+  jq field) or leaving the field commits, as one undo step; Escape puts the value
+  back; an unfocused field follows the document. "Add after" opens a form there:
+  pick a kind and fill its fields, and it shows the jq it will write
+  (`stageText`, the only generated text) before Add. The new stage is then
+  selected and focused; Escape or Cancel writes nothing.
 - **Open checks before calling the app done.** The stale-range race (a canvas
   edit within 200 ms of typing in the editor) is guarded and unit-tested
   (`edits.ts` refuses a node whose text changed) but not exercised in a browser:
@@ -222,7 +234,9 @@ whole program on the whole input.
   JS chunk is ~781 KB (237 KB gzipped): CodeMirror, React Flow and
   web-tree-sitter; code-split it in the Quality-bar work. The canvas fits the
   chain down to 70% zoom, then pans; at narrow widths (under ~1,100 px of canvas)
-  five or more nodes render small.
+  five or more nodes render small. The Stage pane's height follows the selected
+  kind (a note, one or two fields, the three-line jq field, or the add form), so
+  selecting a node moves the Output pane's top edge; the canvas nodes stay put.
 
 ### Toolchains on this machine
 
