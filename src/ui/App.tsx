@@ -8,6 +8,7 @@ import { PipelineCanvas } from './PipelineCanvas.tsx'
 import { ShareButton } from './Share.tsx'
 import { StagePane, type Adding } from './StagePane.tsx'
 import { useAppStore } from './store.ts'
+import { useEditorDiagnostics } from './useEditorDiagnostics.ts'
 import { useGraphEdits } from './useGraphEdits.ts'
 import { useJqParser } from './useJqParser.ts'
 import { useSharedLinks } from './useSharedLinks.ts'
@@ -48,6 +49,8 @@ export function App() {
   const edits = useGraphEdits(editorView, parser.status === 'ready' ? parser.parse : null)
   // a share link pasted into this tab opens through the editor too
   useSharedLinks(editorView)
+  // failed stages are marked in the editor too, where they can be fixed
+  useEditorDiagnostics(editorView, source, model, previews.results)
   const notice = useAppStore((s) => s.notice)
   const setNotice = useAppStore((s) => s.setNotice)
 

@@ -2,7 +2,9 @@ import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { SAMPLE_ITEMS } from '../core/eval/sample.ts'
 import { locate } from '../core/parse/graph.ts'
 import type { GraphModel, GraphNode } from '../core/parse/model.ts'
-import { formatInWorker, PREVIEW_OUTPUT_LIMIT, runInWorker, type RunOutput } from '../worker/client.ts'
+import { compileErrors, describeCompileErrors } from '../core/eval/diagnose.ts'
+import { EngineError, formatInWorker, PREVIEW_OUTPUT_LIMIT, runInWorker, type RunOutput } from '../worker/client.ts'
+import { errorText, messageOf } from './errors.ts'
 import { kindLabel, nodeLabel, summarize } from './summary.ts'
 import type { Previews } from './usePreviews.ts'
 
@@ -46,20 +48,20 @@ export function OutputPane({ source, input, model, previews, selected: node }: P
     const result = node ? results?.get(node.id) : undefined
     // the canvas shows the node's kind; the caption names which node this is
     if (node) caption = nodeLabel(node)
-    if (!result) {
+    if (!result || !node) {
       shown = { kind: 'hint', text: 'Running…' }
     } else if (result.status === 'ok') {
       shown = { kind: 'output', text: result.output.text, truncated: result.output.truncated, partial: result.partial }
       caption += ` · ${summarize(result, false).text.split(' · ')[0]}`
     } else if (result.status === 'error') {
-      shown = { kind: 'error', message: cleanMessage(result.error) }
+      shown = { kind: 'error', message: errorText(result, node, source) }
     } else {
       const culprit = model && locate(model, result.by)?.node
       const error = results?.get(result.by)
       shown = {
         kind: 'error',
         message: `Blocked by an error in ${culprit ? `${kindLabel(culprit)} ${nodeLabel(culprit)}` : 'an earlier step'}:\n\n${
-          error?.status === 'error' ? cleanMessage(error.error) : ''
+          error?.status === 'error' && culprit ? errorText(error, culprit, source) : ''
         }`,
       }
     }
@@ -134,7 +136,7 @@ function useFullRun(source: string, input: string) {
     setState({ status: 'running' })
     runInWorker(source, input, PREVIEW_OUTPUT_LIMIT, controller.signal).then(
       (output) => !controller.signal.aborted && setState({ status: 'done', output }),
-      (e: unknown) => !controller.signal.aborted && setState({ status: 'error', message: cleanMessage(e) }),
+      (e: unknown) => !controller.signal.aborted && setState({ status: 'error', message: fullRunError(e, source) }),
     )
   }
   return { state, run }
@@ -158,8 +160,10 @@ function useFormatted(text: string): string {
   return formatted?.raw === text ? formatted.pretty : text
 }
 
-function cleanMessage(e: unknown): string {
-  return String(e instanceof Error ? e.message : e).replace(/^Error:\s*/, '')
+/** The whole program was compiled, so its errors are placed as they are. */
+function fullRunError(e: unknown, source: string): string {
+  if (!(e instanceof EngineError) || e.kind !== 'compile') return messageOf(e)
+  return describeCompileErrors(compileErrors(e.message, source), source, 0)
 }
 
 function Notice({ children }: { children: ReactNode }) {

@@ -1,5 +1,6 @@
 import type { NodeResult } from '../core/eval/cache.ts'
 import type { GraphNode } from '../core/parse/model.ts'
+import { errorHeadline } from './errors.ts'
 
 /** How a node reads in one line, on its card and above its preview. */
 export interface Summary {
@@ -30,7 +31,7 @@ function valueCount(result: Extract<NodeResult, { status: 'ok' }>): number {
 export function summarize(result: NodeResult | undefined, running: boolean): Summary {
   if (!result) return { tone: 'muted', text: running ? 'running…' : '' }
   if (result.status === 'blocked') return { tone: 'muted', text: 'blocked by an earlier error' }
-  if (result.status === 'error') return { tone: 'error', text: 'error' }
+  if (result.status === 'error') return { tone: 'error', text: errorHeadline(result) }
   const count = valueCount(result)
   if (count === 0) return { tone: 'muted', text: 'no output' }
   // "+": cut here or upstream, so there are more values than counted

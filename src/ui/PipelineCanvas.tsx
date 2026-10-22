@@ -126,13 +126,17 @@ function Canvas({ model, results, running, selectedId, onSelect, edits, onAddAft
         const size = measured.current.get(node.id)
         const cell = grid.cells.get(node.id) ?? { col: 0, row: 0 }
         const laneKey = grid.laneKeys.get(node.id) ?? null
+        const summary = summarize(results?.get(node.id), running)
         return {
           id: node.id,
           type: 'stage',
           position: { x: cell.col * SPACING, y: cell.row * ROW },
-          data: { node, index: chainIndex(node.id), laneKey, summary: summarize(results?.get(node.id), running) },
+          data: { node, index: chainIndex(node.id), laneKey, summary },
           selected: node.id === selectedId,
           ariaLabel: `${kindLabel(node)}: ${nodeLabel(node)}${laneKey === null ? '' : `, for key ${laneKey}`}`,
+          // the name says what the stage is; its description, what it produced
+          // (or what failed), then React Flow's keyboard help
+          domAttributes: { 'aria-describedby': `${statusId(node.id)} ${RF_NODE_HELP}` },
           ...(size ? { measured: size } : {}),
         }
       }),
@@ -251,6 +255,7 @@ function Canvas({ model, results, running, selectedId, onSelect, edits, onAddAft
           edgeTypes={edgeTypes}
           onNodesChange={onNodesChange}
           onNodeDoubleClick={(_, node) => node.data.node.kind !== 'source' && setEditing(node.id)}
+          id={RF_ID}
           colorMode="dark"
           fitView
           fitViewOptions={FIT}
@@ -271,6 +276,11 @@ function Canvas({ model, results, running, selectedId, onSelect, edits, onAddAft
     </Actions.Provider>
   )
 }
+
+/** The id React Flow gives its node keyboard help, for the `id` set on <ReactFlow>. */
+const RF_ID = 'pipeline'
+const RF_NODE_HELP = `react-flow__node-desc-${RF_ID}`
+const statusId = (id: string) => `stage-status-${id}`
 
 const tone: Record<Summary['tone'], string> = {
   ok: 'text-neutral-400',
@@ -305,7 +315,12 @@ const StageCard = memo(function StageCard({ data, selected }: NodeProps<StageNod
           {label}
         </div>
       )}
-      <div className={`mt-1 truncate font-mono text-[11px] ${tone[summary.tone]}`}>{summary.text}</div>
+      <div className={`mt-1 truncate font-mono text-[11px] ${tone[summary.tone]}`}
+        id={statusId(node.id)}
+        title={summary.text}
+      >
+        {summary.text}
+      </div>
 
       {/* The actions live inside the card, below its text: nothing can cover
           the node, and Tab moves from the node straight to them. */}
