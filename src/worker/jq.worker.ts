@@ -1,40 +1,40 @@
 import * as Comlink from 'comlink'
-import init, { run as wasmRun } from './jqpkg/jq_wasm.js'
+import init, { format as wasmFormat, run as wasmRun } from './jqpkg/jq_wasm.js'
 
 /**
  * Invariant 4: jq runs in a Web Worker, always. The main thread never touches
  * the WASM module, so canvas interaction stays smooth while a transform runs.
  *
- * The engine is jaq compiled to WASM (see crates/jq-wasm). It speaks the stream
- * convention: `input` is a JSON array of values, and the result is a JSON array
- * of all values the filter emitted across that stream.
+ * The engine is jaq compiled to WASM (see crates/jq-wasm). JSON crosses the
+ * boundary as text both ways and is never parsed into JS values here: that
+ * would reorder integer-like object keys and round numbers.
  */
-
-export interface JqError {
-  kind: 'compile' | 'runtime'
-  message: string
-}
-
 export interface JqApi {
-  /** Apply a single jq filter to a stream of JSON input values. */
-  run(filter: string, input: unknown): Promise<unknown>
+  /**
+   * Apply one jq filter to `input` (zero or more JSON values), returning the
+   * outputs as compact JSON, one value per line. Rejects with an Error named
+   * JqInputError, JqCompileError or JqRuntimeError.
+   */
+  run(filter: string, input: string): Promise<string>
+  /** Pretty-print JSON text for display, keeping key order. */
+  format(text: string, indent: number): Promise<string>
 }
 
-// Instantiate the wasm module once, lazily, on the first run.
+// Instantiate the wasm module once, lazily, on first use.
 let ready: Promise<unknown> | null = null
 function ensureReady(): Promise<unknown> {
-  if (!ready) ready = init()
+  ready ??= init()
   return ready
 }
 
 const api: JqApi = {
   async run(filter, input) {
     await ensureReady()
-    const inputsJson = JSON.stringify(input === undefined ? [] : input)
-    // wasmRun throws a JS Error (readable message) on parse/compile/runtime
-    // failure; comlink forwards it to the caller as a rejected promise.
-    const outputsJson = wasmRun(filter, inputsJson)
-    return JSON.parse(outputsJson)
+    return wasmRun(filter, input)
+  },
+  async format(text, indent) {
+    await ensureReady()
+    return wasmFormat(text, indent)
   },
 }
 

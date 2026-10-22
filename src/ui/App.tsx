@@ -3,7 +3,7 @@ import { JqEditor } from './JqEditor.tsx'
 import { PipelineStrip } from './PipelineStrip.tsx'
 import { useAppStore } from './store.ts'
 import { useJqParser } from './useJqParser.ts'
-import { runFilterInWorker } from '../worker/client.ts'
+import { formatInWorker, runFilterInWorker } from '../worker/client.ts'
 
 /**
  * The end-to-end loop works before the graph exists. The user pastes JSON,
@@ -14,7 +14,7 @@ import { runFilterInWorker } from '../worker/client.ts'
 type Preview =
   | { status: 'empty' }
   | { status: 'loading' }
-  | { status: 'ok'; values: unknown[] }
+  | { status: 'ok'; text: string }
   | { status: 'error'; message: string }
 
 function cleanMessage(e: unknown): string {
@@ -51,19 +51,14 @@ export function App() {
       setPreview({ status: 'empty' })
       return
     }
-    let value: unknown
-    try {
-      value = JSON.parse(input)
-    } catch {
-      setPreview({ status: 'error', message: 'Input is not valid JSON.' })
-      return
-    }
     let cancelled = false
     setPreview({ status: 'loading' })
-    // One filter against the one-value input stream (invariant 3 semantics).
-    runFilterInWorker(source, [value])
-      .then((out) => {
-        if (!cancelled) setPreview({ status: 'ok', values: out as unknown[] })
+    // The input goes to jaq as raw text: JSON.parse here would reorder
+    // integer-like keys and round big numbers. jaq formats the output too.
+    runFilterInWorker(source, input)
+      .then((out) => (out === '' ? '' : formatInWorker(out)))
+      .then((text) => {
+        if (!cancelled) setPreview({ status: 'ok', text })
       })
       .catch((e) => {
         if (!cancelled) setPreview({ status: 'error', message: cleanMessage(e) })
@@ -128,17 +123,19 @@ function OutputView({ preview }: { preview: Preview }) {
   }
   if (preview.status === 'error') {
     return (
-      <pre className="h-full w-full overflow-auto whitespace-pre-wrap p-3 font-mono text-sm text-red-400">
+      // whitespace-pre: compile errors are box-drawn diagrams that must not wrap
+      <pre className="h-full w-full overflow-auto whitespace-pre p-3 font-mono text-sm text-red-400">
         {preview.message}
       </pre>
     )
   }
-  if (preview.values.length === 0) {
+  if (preview.text === '') {
     return <Hint>No output (filter produced an empty stream).</Hint>
   }
-  const text = preview.values.map((v) => JSON.stringify(v, null, 2)).join('\n')
   return (
-    <pre className="h-full w-full overflow-auto p-3 font-mono text-sm text-neutral-100">{text}</pre>
+    <pre className="h-full w-full overflow-auto p-3 font-mono text-sm text-neutral-100">
+      {preview.text}
+    </pre>
   )
 }
 

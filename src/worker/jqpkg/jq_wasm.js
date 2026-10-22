@@ -1,20 +1,48 @@
 /* @ts-self-types="./jq_wasm.d.ts" */
 
 /**
- * Apply `filter` to each value in the `inputs_json` stream (a JSON array),
- * returning all outputs as a JSON array string. Throws a JS error carrying a
- * readable message on invalid input, a parse/compile error, or a runtime trap.
- * @param {string} filter
- * @param {string} inputs_json
+ * Pretty-print JSON text (a sequence of values) for display, `indent` spaces
+ * per level, one value after another.
+ * @param {string} text
+ * @param {number} indent
  * @returns {string}
  */
-export function run(filter, inputs_json) {
+export function format(text, indent) {
+    let deferred3_0;
+    let deferred3_1;
+    try {
+        const ptr0 = passStringToWasm0(text, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ret = wasm.format(ptr0, len0, indent);
+        var ptr2 = ret[0];
+        var len2 = ret[1];
+        if (ret[3]) {
+            ptr2 = 0; len2 = 0;
+            throw takeFromExternrefTable0(ret[2]);
+        }
+        deferred3_0 = ptr2;
+        deferred3_1 = len2;
+        return getStringFromWasm0(ptr2, len2);
+    } finally {
+        wasm.__wbindgen_free(deferred3_0, deferred3_1, 1);
+    }
+}
+
+/**
+ * Apply `filter` to each JSON value in `input`, returning every output value
+ * as compact JSON, one per line. Throws an `Error` named `JqInputError`,
+ * `JqCompileError` or `JqRuntimeError` with a readable message.
+ * @param {string} filter
+ * @param {string} input
+ * @returns {string}
+ */
+export function run(filter, input) {
     let deferred4_0;
     let deferred4_1;
     try {
         const ptr0 = passStringToWasm0(filter, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
         const len0 = WASM_VECTOR_LEN;
-        const ptr1 = passStringToWasm0(inputs_json, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const ptr1 = passStringToWasm0(input, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
         const len1 = WASM_VECTOR_LEN;
         const ret = wasm.run(ptr0, len0, ptr1, len1);
         var ptr3 = ret[0];
@@ -33,9 +61,16 @@ export function run(filter, inputs_json) {
 function __wbg_get_imports() {
     const import0 = {
         __proto__: null,
-        __wbg_Error_30c8987f7c2ed4e2: function(arg0, arg1) {
-            const ret = Error(getStringFromWasm0(arg0, arg1));
+        __wbg_new_02e8d92327a1dba5: function(arg0, arg1) {
+            const ret = new Error(getStringFromWasm0(arg0, arg1));
             return ret;
+        },
+        __wbg_now_061a1a76be8724c3: function() {
+            const ret = Date.now();
+            return ret;
+        },
+        __wbg_set_name_fd3320184d26d041: function(arg0, arg1, arg2) {
+            arg0.name = getStringFromWasm0(arg1, arg2);
         },
         __wbindgen_init_externref_table: function() {
             const table = wasm.__wbindgen_externrefs;

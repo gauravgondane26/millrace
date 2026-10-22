@@ -2,16 +2,23 @@
 /* eslint-disable */
 
 /**
- * Apply `filter` to each value in the `inputs_json` stream (a JSON array),
- * returning all outputs as a JSON array string. Throws a JS error carrying a
- * readable message on invalid input, a parse/compile error, or a runtime trap.
+ * Pretty-print JSON text (a sequence of values) for display, `indent` spaces
+ * per level, one value after another.
  */
-export function run(filter: string, inputs_json: string): string;
+export function format(text: string, indent: number): string;
+
+/**
+ * Apply `filter` to each JSON value in `input`, returning every output value
+ * as compact JSON, one per line. Throws an `Error` named `JqInputError`,
+ * `JqCompileError` or `JqRuntimeError` with a readable message.
+ */
+export function run(filter: string, input: string): string;
 
 export type InitInput = RequestInfo | URL | Response | BufferSource | WebAssembly.Module;
 
 export interface InitOutput {
     readonly memory: WebAssembly.Memory;
+    readonly format: (a: number, b: number, c: number) => [number, number, number, number];
     readonly run: (a: number, b: number, c: number, d: number) => [number, number, number, number];
     readonly __wbindgen_externrefs: WebAssembly.Table;
     readonly __wbindgen_malloc: (a: number, b: number) => number;

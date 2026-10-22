@@ -17,13 +17,17 @@ export interface PipelineNode {
   filter: string
 }
 
-/** Runs one filter against one input. The real impl is the workered jaq RPC. */
-export type RunFilter = (filter: string, input: unknown) => Promise<unknown>
+/**
+ * Runs one filter over an input stream. The real impl is the workered jaq RPC.
+ * Streams are JSON text, one compact value per line (see crates/jq-wasm), so a
+ * node's output is the next node's input as is.
+ */
+export type RunFilter = (filter: string, input: string) => Promise<string>
 
 interface CacheEntry {
   filterHash: number
   inputHash: number
-  output: unknown
+  output: string
 }
 
 export type PipelineCache = Map<string, CacheEntry>
@@ -42,13 +46,10 @@ function hashString(s: string): number {
   return h >>> 0
 }
 
-function hashInput(v: unknown): number {
-  return hashString(v === undefined ? '\0undefined' : JSON.stringify(v))
-}
 
 export interface RunResult {
   /** Preview output for each node, in order. */
-  outputs: unknown[]
+  outputs: string[]
   /** Ids of nodes that were actually recomputed this run (cache misses). */
   ran: string[]
 }
@@ -59,20 +60,20 @@ export interface RunResult {
  */
 export async function runPipeline(
   nodes: readonly PipelineNode[],
-  input: unknown,
+  input: string,
   runFilter: RunFilter,
   cache: PipelineCache,
 ): Promise<RunResult> {
-  const outputs: unknown[] = []
+  const outputs: string[] = []
   const ran: string[] = []
   let current = input
 
   for (const node of nodes) {
     const filterHash = hashString(node.filter)
-    const inputHash = hashInput(current)
+    const inputHash = hashString(current)
     const prev = cache.get(node.id)
 
-    let output: unknown
+    let output: string
     if (prev && prev.filterHash === filterHash && prev.inputHash === inputHash) {
       output = prev.output
     } else {
