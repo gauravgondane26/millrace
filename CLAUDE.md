@@ -126,37 +126,60 @@ correctness-critical decision lives, so it is the part that gets tests.
 - `npm run test:watch` — Vitest in watch mode
 - `npm test -- src/core/eval` — run one suite (path filter)
 - `npm test -- -t "cache invalidation"` — run tests matching a name
-
 - `npm run build:wasm` — rebuild the jaq wasm package (needs the Rust toolchain)
+- `npm run build:grammar` — rebuild the jq grammar wasm (needs git and network)
 
 ## Status
 
-**Phase 1 done:** paste JSON, type jq, see live worker-computed output. The whole
-source is treated as one opaque filter until parsing lands.
+**Phases 1–3 done.** Paste JSON, edit jq in CodeMirror, see live worker-computed
+output, and see the source projected into pipeline stages (a read-only strip under
+the editor until the React Flow canvas lands in Phase 4). Execution still runs the
+whole source as one filter; per-node previews arrive with the canvas.
 
-- **Execution — wired.** `crates/jq-wasm` wraps jaq (`jaq-core`/`jaq-std`/
-  `jaq-json` 3.x) behind one export, `run(filter, inputs)`. The generated package
-  is committed in `src/worker/jqpkg` so the app builds without Rust; regenerate it
-  with `npm run build:wasm`. `src/worker/jqEngine.test.ts` guards it in Node.
+- **Execution.** `crates/jq-wasm` wraps jaq (`jaq-core`/`jaq-std`/`jaq-json` 3.x)
+  behind one export, `run(filter, inputs)`. The generated package is committed in
+  `src/worker/jqpkg` so the app builds without Rust; regenerate it with
+  `npm run build:wasm`. `src/worker/jqEngine.test.ts` guards it in Node.
 - **Stream convention.** A node's value is a JSON array of values. `run` applies
   the filter to each element and concatenates all outputs, so node k's output
   array is node k+1's input array. The user's pasted document is one value: `[doc]`.
-- **Parsing — not wired.** `src/core/parse/project.ts` throws `TODO(wasm)` until a
-  tree-sitter jq grammar (error recovery + byte ranges) is built. The projection
-  suite stays `it.todo` until then.
-- **Known rough edge.** Engine errors currently surface jaq's raw `Debug` text;
-  readable, node-mapped messages are a Quality-bar item still to do.
+- **Editor.** CodeMirror holds the live text and history; its update listener is
+  the only writer of `source` in the store. Graph edits must dispatch
+  `graphEditSpec` (`core/splice/transaction.ts`) so undo covers them. Typing
+  commits after 200 ms, graph edits and undo/redo at once (`core/parse/schedule.ts`).
+- **Parsing.** `public/tree-sitter-jq.wasm` is flurie/tree-sitter-jq
+  (BSD-3-Clause, notice shipped beside it) at a pinned commit, rebuilt by
+  `npm run build:grammar`. nverno/tree-sitter-jq was rejected for being GPL-3.0.
+  `core/parse/parser.ts` loads it and `project.ts` flattens the pipe chain (rules
+  in its header). The grammar can't parse `@format` strings; those stages degrade
+  to custom nodes.
+- **Offsets are UTF-16 code units, not bytes.** web-tree-sitter reports UTF-16
+  indices for JS strings, the same unit as CodeMirror, so one `TextRange` type is
+  used everywhere with no conversion. Where invariant 2 and the Stack section say
+  "byte range", read "range".
+- **Known engine gaps (next up).** Input object keys come out sorted (the
+  wrapper's `serde_json` step). `now`, `env`, `halt` and `halt_error` trap the
+  wasm (later runs still work). `@csv`, `@tsv`, `@base32`/`@base32d`,
+  `input`/`inputs`, `$ENV` and `$__loc__` are undefined. Some jq builtins
+  (`tostream`, `IN`, `INDEX`, `leaf_paths`, `toarray`, ...) may be missing from
+  jaq itself.
+- **Known rough edges.** Engine errors show jaq's raw `Debug` text (readable,
+  node-mapped messages are a Quality-bar item). The main JS chunk is ~555 KB
+  (169 KB gzipped), mostly CodeMirror and web-tree-sitter; code-split it in the
+  Quality-bar work. Previews run against the full input; sampling (invariant 4)
+  comes with per-node previews.
 
-`core/splice` and `core/eval` are implemented and tested independently of both.
+### Toolchains on this machine
 
-### Rust toolchain on this machine
-
-GNU host (`stable-x86_64-pc-windows-gnu`) with the `wasm32-unknown-unknown` target
-and a prebuilt `wasm-pack`. Shells started before the install may not have
+Rust: GNU host (`stable-x86_64-pc-windows-gnu`) with the `wasm32-unknown-unknown`
+target and a prebuilt `wasm-pack`. Shells started before the install may not have
 `~/.cargo/bin` on PATH, so prepend it. An old 32-bit `C:\MinGW\bin` on PATH breaks
 host builds of crates that need `dlltool` (e.g. `windows-sys`). The jaq wrapper
 doesn't pull any of those in. If a future dependency does, install a 64-bit
 MinGW-w64 rather than building around it.
+
+tree-sitter: the CLI (a devDependency) downloads wasi-sdk (~590 MB) and binaryen
+into `%LOCALAPPDATA%\tree-sitter` on first use. No Emscripten or Docker needed.
 
 ## Testing
 
