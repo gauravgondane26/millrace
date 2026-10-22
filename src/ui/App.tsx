@@ -53,8 +53,8 @@ export function App() {
     }
     let cancelled = false
     setPreview({ status: 'loading' })
-    // The input goes to jaq as raw text: JSON.parse here would reorder
-    // integer-like keys and round big numbers. jaq formats the output too.
+    // The input goes to jq as raw text: JSON.parse here would reorder
+    // integer-like keys and round big numbers. jq formats the output too.
     runInWorker(source, input)
       .then(async (out) => ({
         text: out.text === '' ? '' : await formatInWorker(out.text),

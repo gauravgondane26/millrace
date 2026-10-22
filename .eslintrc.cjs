@@ -5,7 +5,7 @@ module.exports = {
     'eslint:recommended',
     'plugin:@typescript-eslint/recommended',
   ],
-  ignorePatterns: ['dist', 'node_modules', '*.cjs', 'src/worker/jqpkg'],
+  ignorePatterns: ['dist', 'node_modules', '*.cjs'],
   parser: '@typescript-eslint/parser',
   parserOptions: { ecmaVersion: 'latest', sourceType: 'module' },
   plugins: ['react-hooks', 'react-refresh'],

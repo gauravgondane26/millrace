@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import { createCache, runPipeline, type PipelineNode } from './cache.ts'
 
-/** A deterministic stand-in for jaq: output depends on both filter and input. */
+/** A deterministic stand-in for jq: output depends on both filter and input. */
 const runFilter = vi.fn(async (filter: string, input: string) => `${input} | ${filter}`)
 
 function sixNodes(): PipelineNode[] {

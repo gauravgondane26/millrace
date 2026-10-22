@@ -18,8 +18,8 @@ export interface PipelineNode {
 }
 
 /**
- * Runs one filter over an input stream. The real impl is the workered jaq RPC.
- * Streams are JSON text, one compact value per line (see crates/jq-wasm), so a
+ * Runs one filter over an input stream. The real impl is the workered jq RPC.
+ * Streams are JSON text, one compact value per line (see worker/engine.ts), so a
  * node's output is the next node's input as is.
  */
 export type RunFilter = (filter: string, input: string) => Promise<string>

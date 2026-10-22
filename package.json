@@ -8,7 +8,6 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "build:grammar": "node scripts/build-grammar.mjs",
-    "build:wasm": "wasm-pack build crates/jq-wasm --target web --out-dir ../../src/worker/jqpkg --out-name jq_wasm --no-pack && rm -f src/worker/jqpkg/.gitignore",
     "preview": "vite preview",
     "lint": "eslint . --max-warnings 0",
     "typecheck": "tsc -b --noEmit",

@@ -9,7 +9,7 @@ import type { GraphModel, GraphNode, NodeKind, Span, TextRange } from './model.t
  * - Calls with the right arity map to structural kinds (CALLS), and a plain
  *   field path (`.a.b`) is a `pick`. Everything else, including whatever the
  *   grammar can't parse, is a `custom` node holding its raw text. Valid jq is
- *   never rejected (invariant 5): jaq still runs the text, the graph just
+ *   never rejected (invariant 5): jq still runs the text, the graph just
  *   can't draw that part structurally.
  * - Comments between stages fall outside every node's range, so splicing a
  *   node never touches them (invariant 2).

@@ -28,7 +28,7 @@ export class EngineError extends Error {
 /** Longest one call may take before the worker is presumed stuck. */
 const TIMEOUT_MS = 10_000
 
-/** The names the wasm gives its errors (crates/jq-wasm). */
+/** The names engine.ts gives its errors. */
 const KINDS: Partial<Record<string, EngineErrorKind>> = {
   JqInputError: 'input',
   JqCompileError: 'compile',
