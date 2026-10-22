@@ -1,9 +1,9 @@
 import {
   Background,
   BaseEdge,
-  Controls,
   getSmoothStepPath,
   Handle,
+  Panel,
   Position,
   ReactFlow,
   ReactFlowProvider,
@@ -270,7 +270,7 @@ function Canvas({ model, results, running, selectedId, onSelect, edits, onAddAft
           multiSelectionKeyCode={null}
         >
           <Background gap={20} size={1} />
-          <Controls showInteractive={false} />
+          <ZoomControls />
         </ReactFlow>
       </div>
     </Actions.Provider>
@@ -301,7 +301,7 @@ const StageCard = memo(function StageCard({ data, selected }: NodeProps<StageNod
   const label = nodeLabel(node)
   const editing = actions?.editing === node.id
   const input = node.kind === 'source'
-  const border = selected ? 'border-blue-400 ring-1 ring-blue-400' : 'border-neutral-600'
+  const border = selected ? 'border-blue-400 ring-1 ring-blue-400' : 'border-neutral-500'
   // dashed: jq the canvas can't take apart (a construction it can)
   const opaque = node.kind === 'custom' && !node.construct
   return (
@@ -385,6 +385,41 @@ function FanEdgePath(props: EdgeProps<FanEdge>) {
 
 const edgeTypes = { fan: FanEdgePath }
 
+/**
+ * Zoom in, zoom out and fit, in place of React Flow's <Controls>, which puts
+ * an aria-label on a plain div (no role to name) and draws no focus ring.
+ */
+function ZoomControls() {
+  const { zoomIn, zoomOut, fitView } = useReactFlow()
+  return (
+    <Panel position="bottom-left" role="group" aria-label="Zoom" className="flex flex-col gap-1">
+      <ZoomButton label="Zoom in" onClick={() => void zoomIn()}>
+        +
+      </ZoomButton>
+      <ZoomButton label="Zoom out" onClick={() => void zoomOut()}>
+        −
+      </ZoomButton>
+      <ZoomButton label="Fit the pipeline in view" onClick={() => void fitView(FIT)}>
+        ⤢
+      </ZoomButton>
+    </Panel>
+  )
+}
+
+function ZoomButton({ label, onClick, children }: { label: string; onClick: () => void; children: ReactNode }) {
+  return (
+    <button
+      type="button"
+      aria-label={label}
+      title={label}
+      onClick={onClick}
+      className="h-7 w-7 rounded border border-neutral-500 bg-neutral-900 text-sm leading-none text-neutral-100 hover:bg-neutral-800 focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-400"
+    >
+      <span aria-hidden>{children}</span>
+    </button>
+  )
+}
+
 function ToolButton({ label, onClick, children }: { label: string; onClick: () => void; children: ReactNode }) {
   return (
     <button
@@ -393,7 +428,7 @@ function ToolButton({ label, onClick, children }: { label: string; onClick: () =
       onClick={onClick}
       // keys stay on the button: React Flow would otherwise take Enter as "select"
       onKeyDown={(e) => e.stopPropagation()}
-      className="nodrag rounded border border-neutral-600 bg-neutral-800 px-1.5 py-0.5 text-[11px] text-neutral-100 hover:bg-neutral-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-400"
+      className="nodrag rounded border border-neutral-500 bg-neutral-800 px-1.5 py-0.5 text-[11px] text-neutral-100 hover:bg-neutral-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-400"
     >
       {children}
     </button>
@@ -434,7 +469,7 @@ function InlineInput({
         else if (e.key === 'Escape') finish(null)
       }}
       onBlur={() => finish(draft)}
-      className="nodrag nopan nowheel w-full rounded border border-blue-400 bg-neutral-950 px-1 font-mono text-xs text-neutral-100 outline-none placeholder:text-neutral-500"
+      className="nodrag nopan nowheel w-full rounded border border-blue-400 bg-neutral-950 px-1 font-mono text-xs text-neutral-100 outline outline-2 outline-blue-400 placeholder:text-neutral-400"
     />
   )
 }

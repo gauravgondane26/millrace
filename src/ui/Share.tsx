@@ -41,7 +41,7 @@ export function ShareButton({ editor }: { editor: RefObject<EditorView | null> }
             autoFocus
             value={manual}
             onFocus={(e) => e.currentTarget.select()}
-            className="w-56 rounded border border-neutral-600 bg-neutral-900 px-2 py-0.5 font-mono text-xs text-neutral-100 outline-none focus:border-blue-400"
+            className="w-56 rounded border border-neutral-500 bg-neutral-900 px-2 py-0.5 font-mono text-xs text-neutral-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-400"
           />
           <button
             type="button"
@@ -63,4 +63,4 @@ export function ShareButton({ editor }: { editor: RefObject<EditorView | null> }
 }
 
 const button =
-  'rounded border border-neutral-600 px-2 py-0.5 text-xs text-neutral-100 hover:bg-neutral-800 focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-400'
+  'rounded border border-neutral-500 px-2 py-0.5 text-xs text-neutral-100 hover:bg-neutral-800 focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-400'

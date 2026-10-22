@@ -120,7 +120,7 @@ export function App() {
               value={inputText}
               onChange={(e) => setInputText(e.target.value)}
               placeholder='{"users": [{"name": "ada"}]}'
-              className="h-full w-full resize-none bg-neutral-900 p-3 font-mono text-sm text-neutral-100 outline-none placeholder:text-neutral-500"
+              className="h-full w-full resize-none bg-neutral-900 p-3 font-mono text-sm text-neutral-100 outline-none placeholder:text-neutral-400 focus-visible:outline focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-blue-400"
             />
           </Pane>
           <Pane label="jq filter" className="flex-1">

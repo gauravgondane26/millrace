@@ -84,7 +84,7 @@ export function OutputPane({ source, input, model, previews, selected: node }: P
           type="button"
           onClick={full.run}
           disabled={input.trim() === '' || full.state.status === 'running'}
-          className="shrink-0 rounded border border-neutral-600 px-2 py-0.5 text-xs text-neutral-100 hover:bg-neutral-800 focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-400 disabled:opacity-40"
+          className="shrink-0 rounded border border-neutral-500 px-2 py-0.5 text-xs text-neutral-100 hover:bg-neutral-800 focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-400 disabled:opacity-40"
         >
           Run full
         </button>
@@ -93,7 +93,7 @@ export function OutputPane({ source, input, model, previews, selected: node }: P
         {shown.kind === 'hint' && <Hint>{shown.text}</Hint>}
         {shown.kind === 'error' && (
           // whitespace-pre: compile errors are caret diagrams that must not wrap
-          <pre className="h-full w-full overflow-auto whitespace-pre p-3 font-mono text-sm text-red-400">
+          <pre tabIndex={0} className={`${scrollable} whitespace-pre text-red-400`}>
             {shown.message}
           </pre>
         )}
@@ -101,7 +101,7 @@ export function OutputPane({ source, input, model, previews, selected: node }: P
           (shown.text === '' ? (
             <Hint>No output (the filter produced an empty stream).</Hint>
           ) : (
-            <pre className="h-full w-full overflow-auto p-3 font-mono text-sm text-neutral-100">
+            <pre tabIndex={0} className={`${scrollable} text-neutral-100`}>
               {pretty}
             </pre>
           ))}
@@ -120,6 +120,13 @@ export function OutputPane({ source, input, model, previews, selected: node }: P
     </div>
   )
 }
+
+/**
+ * The output and error views scroll, so they take keyboard focus: arrow keys
+ * and Page Up/Down then scroll them without a mouse.
+ */
+const scrollable =
+  'h-full w-full overflow-auto p-3 font-mono text-sm focus-visible:outline focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-blue-400'
 
 type FullRun =
   | { status: 'idle' }

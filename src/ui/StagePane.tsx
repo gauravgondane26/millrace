@@ -121,7 +121,7 @@ function AddStage({
             setKind(e.target.value as AddableKind)
             setValues([])
           }}
-          className="rounded border border-neutral-600 bg-neutral-900 px-1 py-0.5 font-mono text-xs text-neutral-100"
+          className="rounded border border-neutral-500 bg-neutral-900 px-1 py-0.5 font-mono text-xs text-neutral-100"
         >
           {ADDABLE_KINDS.map((k) => (
             <option key={k} value={k}>
@@ -154,10 +154,10 @@ function AddStage({
 }
 
 const button =
-  'rounded border border-neutral-600 px-2 py-0.5 text-xs text-neutral-100 hover:bg-neutral-800 focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-400 disabled:opacity-40'
+  'rounded border border-neutral-500 px-2 py-0.5 text-xs text-neutral-100 hover:bg-neutral-800 focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-400 disabled:opacity-40'
 
 const inputClass =
-  'w-full rounded border border-neutral-600 bg-neutral-900 px-2 py-1 font-mono text-xs text-neutral-100 outline-none placeholder:text-neutral-500 focus:border-blue-400'
+  'w-full rounded border border-neutral-500 bg-neutral-900 px-2 py-1 font-mono text-xs text-neutral-100 placeholder:text-neutral-400 focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-400'
 
 /**
  * One field of an existing node. Commits on Enter (Ctrl+Enter in a multi-line
