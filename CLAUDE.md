@@ -143,10 +143,10 @@ Previews run stage by stage on a sample of the input; "Run full" runs the whole
 program on the whole input.
 
 **Phase 9 (quality bar) in progress.** Done: compile errors placed on their
-node and in the editor (see Errors); no layout shift (see Layout). Left:
-keyboard and contrast checks, canvas readability on narrow screens, 50 MB
-inputs (virtualized views, code-splitting), license notices, and last, our
-own jq build with a larger heap.
+node and in the editor (see Errors); no layout shift (see Layout); keyboard,
+focus and contrast (see Accessibility). Left: canvas readability on narrow
+screens, 50 MB inputs (virtualized views, code-splitting), license notices,
+and last, our own jq build with a larger heap.
 
 - **Execution.** `src/worker/engine.ts` drives jq 1.8.2 itself (the `jq-wasm`
   package, pinned exactly), so previews are what jq produces. The engine was
@@ -291,6 +291,16 @@ own jq build with a larger heap.
   web-tree-sitter; code-split it in the Quality-bar work. The canvas fits the
   chain down to 70% zoom, then pans; at narrow widths (under ~1,100 px of canvas)
   five or more nodes render small.
+- **Accessibility.** `e2e/a11y.spec.ts` runs axe (WCAG 2.2 AA, no
+  violations) in several states, checks every visible text's contrast with
+  `e2e/contrast.ts` (axe can't judge the canvas, whose cards overlap the
+  pane), and tabs round the page checking each stop shows a focus ring.
+  `src/index.css` gives React Flow 3:1 edges and a readable attribution, and
+  puts a focus ring on a focused card (React Flow removes the node outline
+  and rings only its built-in node types). Borders are `neutral-500` and
+  placeholders `neutral-400` for contrast. React Flow's `<Controls>` is
+  replaced by `ZoomControls` (it labels a role-less div). The Output views
+  scroll, so they take focus. The app is dark only (`color-scheme: dark`).
 - **Layout (no shift).** `e2e/layout.spec.ts` holds these. The Stage pane has
   one fixed height (9.25rem, the add form for a custom stage being the
   tallest; it scrolls at larger text sizes) and is there before the parser
