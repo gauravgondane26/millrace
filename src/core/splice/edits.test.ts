@@ -4,7 +4,7 @@ import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { beforeAll, describe, expect, it } from 'vitest'
 import { loadJqParser, type ParseJq } from '../parse/parser.ts'
-import { deleteNode, insertAfter, replaceNode, type TextChange } from './edits.ts'
+import { deleteNode, insertAfter, replaceArg, replaceNode, type TextChange } from './edits.ts'
 import { graphEditSpec } from './transaction.ts'
 
 let parse: ParseJq
@@ -47,6 +47,28 @@ describe('replaceNode', () => {
 
   it('refuses the source node', () => {
     expect(replaceNode(parse('. | .a'), 'n0', '.', '.b')).toBeNull()
+  })
+})
+
+describe('replaceArg', () => {
+  it('replaces only the argument, keeping the call’s own spacing', () => {
+    const source = '.users[] | select( .age > 40 ) | .name'
+    const [id, text] = target(source, 'select( .age > 40 )')
+    const change = replaceArg(parse(source), id, text, 0, '.age > 40', '.age > 30')
+    expect(apply(source, change)).toBe('.users[] | select( .age > 30 ) | .name')
+  })
+
+  it('replaces the second argument of limit', () => {
+    const source = 'limit(1; .users[])'
+    const change = replaceArg(parse(source), ...target(source, 'limit(1; .users[])'), 1, '.users[]', '.[]')
+    expect(apply(source, change)).toBe('limit(1; .[])')
+  })
+
+  it('refuses an argument that changed, or doesn’t exist', () => {
+    const source = 'map(.name)'
+    const [id, text] = target(source, 'map(.name)')
+    expect(replaceArg(parse(source), id, text, 0, '.nam', '.age')).toBeNull()
+    expect(replaceArg(parse(source), id, text, 1, '', '.age')).toBeNull()
   })
 })
 

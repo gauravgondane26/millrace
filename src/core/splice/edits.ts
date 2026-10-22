@@ -33,6 +33,25 @@ export function replaceNode(model: GraphModel, id: string, expected: string, tex
   return { from: node.range.start, to: node.range.end, insert: text }
 }
 
+/**
+ * Replace one argument of a call, such as the predicate of `select(...)`,
+ * leaving the rest of the stage, its spacing included, as written.
+ */
+export function replaceArg(
+  model: GraphModel,
+  id: string,
+  expected: string,
+  argIndex: number,
+  expectedArg: string,
+  text: string,
+): TextChange | null {
+  const found = find(model, id, expected)
+  if (!found || found[1] === 0) return null
+  const arg = found[0].args[argIndex]
+  if (!arg || arg.text !== expectedArg) return null
+  return { from: arg.range.start, to: arg.range.end, insert: text }
+}
+
 /** Remove a stage and the `|` joining it to the pipeline. */
 export function deleteNode(model: GraphModel, id: string, expected: string): TextChange | null {
   const found = find(model, id, expected)
