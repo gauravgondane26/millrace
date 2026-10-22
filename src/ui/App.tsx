@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type ReactNode } from 'react'
+import { useEffect, useId, useMemo, useState, type ReactNode } from 'react'
 import { JqEditor } from './JqEditor.tsx'
 import { PipelineStrip } from './PipelineStrip.tsx'
 import { useAppStore } from './store.ts'
@@ -107,9 +107,14 @@ export function App() {
 }
 
 function Pane(props: { label: string; className?: string; children: ReactNode }) {
+  // Named by its heading, so each pane is a landmark region for screen readers.
+  const headingId = useId()
   return (
-    <section className={`flex min-h-0 flex-1 flex-col ${props.className ?? ''}`}>
-      <div className="shrink-0 border-b border-neutral-800 px-3 py-1.5 text-xs font-medium uppercase tracking-wide text-neutral-500">
+    <section aria-labelledby={headingId} className={`flex min-h-0 flex-1 flex-col ${props.className ?? ''}`}>
+      <div
+        id={headingId}
+        className="shrink-0 border-b border-neutral-800 px-3 py-1.5 text-xs font-medium uppercase tracking-wide text-neutral-500"
+      >
         {props.label}
       </div>
       <div className="min-h-0 flex-1">{props.children}</div>
