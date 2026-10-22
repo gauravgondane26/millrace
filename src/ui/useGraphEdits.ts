@@ -3,12 +3,13 @@ import type { EditorView } from '@codemirror/view'
 import { useMemo, type RefObject } from 'react'
 import type { GraphModel } from '../core/parse/model.ts'
 import type { ParseJq } from '../core/parse/parser.ts'
-import { deleteNode, insertAfter, replaceNode, type TextChange } from '../core/splice/edits.ts'
+import { deleteNode, insertAfter, replaceArg, replaceNode, type TextChange } from '../core/splice/edits.ts'
 import { graphEditSpec } from '../core/splice/transaction.ts'
 
 /** Edits made on the canvas. Each returns false if nothing was applied. */
 export interface GraphEdits {
   replace(id: string, expected: string, text: string): boolean
+  replaceArg(id: string, expected: string, argIndex: number, expectedArg: string, text: string): boolean
   remove(id: string, expected: string): boolean
   insertAfter(id: string, expected: string, text: string): boolean
   undo(): void
@@ -41,6 +42,8 @@ export function useGraphEdits(editor: RefObject<EditorView | null>, parse: Parse
     }
     return {
       replace: (id, expected, text) => apply((model) => replaceNode(model, id, expected, text)),
+      replaceArg: (id, expected, argIndex, expectedArg, text) =>
+        apply((model) => replaceArg(model, id, expected, argIndex, expectedArg, text)),
       remove: (id, expected) => apply((model) => deleteNode(model, id, expected)),
       insertAfter: (id, expected, text) =>
         apply((model, source) => insertAfter(model, source, id, expected, text)),

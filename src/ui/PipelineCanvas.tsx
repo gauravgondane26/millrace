@@ -44,19 +44,18 @@ interface Props {
   selectedId: string | null
   onSelect: (id: string) => void
   edits: GraphEdits
-}
-
-/** Which node is being edited in place, and how. */
-interface Editing {
-  id: string
-  mode: 'edit' | 'insert'
+  /** "Add after" on a node: the Stage pane takes it from there. */
+  onAddAfter: (node: GraphNode, index: number) => void
+  /** Move keyboard focus to this node once it is drawn (seq makes repeats count). */
+  focusRequest: { id: string; seq: number } | null
 }
 
 interface CanvasActions {
-  editing: Editing | null
-  startEditing: (editing: Editing) => void
+  /** The node whose raw jq is being edited in place. */
+  editing: string | null
+  startEditing: (id: string) => void
   commitEdit: (data: StageData, value: string | null) => void
-  commitInsert: (data: StageData, value: string | null) => void
+  addAfter: (data: StageData) => void
   remove: (data: StageData) => void
 }
 
@@ -85,8 +84,8 @@ const SPACING = 210
 // readable beats complete: a long chain pans rather than shrinking to fit
 const FIT = { padding: 0.15, minZoom: 0.7, maxZoom: 1 }
 
-function Canvas({ model, results, running, selectedId, onSelect, edits }: Props) {
-  const [editing, setEditing] = useState<Editing | null>(null)
+function Canvas({ model, results, running, selectedId, onSelect, edits, onAddAfter, focusRequest }: Props) {
+  const [editing, setEditing] = useState<string | null>(null)
   const container = useRef<HTMLDivElement>(null)
 
   // React Flow measures each node and expects controlled nodes to carry the
@@ -124,8 +123,15 @@ function Canvas({ model, results, running, selectedId, onSelect, edits }: Props)
   )
 
   // Keyboard focus follows an edit to the node it lands on, once the canvas
-  // has re-derived from the new text.
+  // has drawn it: a node an edit adds appears only after the canvas re-derives
+  // from the new text, so a pending request is tried again on each new set of
+  // nodes. A request for a node already drawn (cancelling an add) changes no
+  // nodes, so it is tried as it arrives too. (The first effect runs before the
+  // second, so both see the request in the same pass.)
   const focusNext = useRef<string | null>(null)
+  useEffect(() => {
+    if (focusRequest) focusNext.current = focusRequest.id
+  }, [focusRequest])
   useEffect(() => {
     const id = focusNext.current
     if (!id) return
@@ -134,7 +140,7 @@ function Canvas({ model, results, running, selectedId, onSelect, edits }: Props)
       element.focus()
       focusNext.current = null
     }
-  }, [nodes])
+  }, [nodes, focusRequest])
   const land = useCallback(
     (id: string) => {
       focusNext.current = id
@@ -159,17 +165,12 @@ function Canvas({ model, results, running, selectedId, onSelect, edits }: Props)
           land(node.id)
         }
       },
-      commitInsert: ({ node, index }, value) => {
-        setEditing(null)
-        const text = value?.trim()
-        if (!text) return land(node.id)
-        if (edits.insertAfter(node.id, node.text, text)) land(`n${index + 1}`)
-      },
+      addAfter: ({ node, index }) => onAddAfter(node, index),
       remove: ({ node, index }) => {
         if (edits.remove(node.id, node.text)) land(`n${index - 1}`)
       },
     }),
-    [editing, edits, land],
+    [editing, edits, land, onAddAfter],
   )
 
   // React Flow reports clicks and Enter on a focused node as select changes,
@@ -199,7 +200,7 @@ function Canvas({ model, results, running, selectedId, onSelect, edits }: Props)
       edits.redo()
     } else if (e.key === 'F2' && selectedId && selectedId !== 'n0') {
       e.preventDefault()
-      setEditing({ id: selectedId, mode: 'edit' })
+      setEditing(selectedId)
     }
   }
 
@@ -219,7 +220,7 @@ function Canvas({ model, results, running, selectedId, onSelect, edits }: Props)
           edges={edges}
           nodeTypes={nodeTypes}
           onNodesChange={onNodesChange}
-          onNodeDoubleClick={(_, node) => node.data.index > 0 && setEditing({ id: node.id, mode: 'edit' })}
+          onNodeDoubleClick={(_, node) => node.data.index > 0 && setEditing(node.id)}
           colorMode="dark"
           fitView
           fitViewOptions={FIT}
@@ -251,7 +252,7 @@ const StageCard = memo(function StageCard({ data, selected }: NodeProps<StageNod
   const actions = useContext(Actions)
   const { node, index, summary } = data
   const label = nodeLabel(node)
-  const editing = actions?.editing?.id === node.id ? actions.editing.mode : null
+  const editing = actions?.editing === node.id
   const border = selected ? 'border-blue-400 ring-1 ring-blue-400' : 'border-neutral-600'
   return (
     <div
@@ -261,7 +262,7 @@ const StageCard = memo(function StageCard({ data, selected }: NodeProps<StageNod
     >
       <Handle type="target" position={Position.Left} isConnectable={false} className="!opacity-0" />
       <div className="text-[10px] font-medium uppercase tracking-wide text-neutral-400">{node.kind}</div>
-      {editing === 'edit' ? (
+      {editing ? (
         <InlineInput label={`Edit ${label}`} initial={node.text} onDone={(v) => actions?.commitEdit(data, v)} />
       ) : (
         <div className="truncate font-mono text-xs text-neutral-100" title={node.text}>
@@ -272,37 +273,22 @@ const StageCard = memo(function StageCard({ data, selected }: NodeProps<StageNod
 
       {/* The actions live inside the card, below its text: nothing can cover
           the node, and Tab moves from the node straight to them. */}
-      {editing === 'insert' ? (
-        <div className="mt-2">
-          <InlineInput
-            label={`New stage after ${label}`}
-            initial=""
-            placeholder="jq for the new stage"
-            onDone={(v) => actions?.commitInsert(data, v)}
-          />
-        </div>
-      ) : (
-        selected &&
-        editing === null && (
-          <div className="mt-2 flex gap-1">
-            {index > 0 && (
-              <ToolButton label={`Edit ${label}`} onClick={() => actions?.startEditing({ id: node.id, mode: 'edit' })}>
-                Edit
-              </ToolButton>
-            )}
-            <ToolButton
-              label={`Add a stage after ${label}`}
-              onClick={() => actions?.startEditing({ id: node.id, mode: 'insert' })}
-            >
-              Add after
+      {selected && !editing && (
+        <div className="mt-2 flex gap-1">
+          {index > 0 && (
+            <ToolButton label={`Edit ${label}`} onClick={() => actions?.startEditing(node.id)}>
+              Edit
             </ToolButton>
-            {index > 0 && (
-              <ToolButton label={`Delete ${label}`} onClick={() => actions?.remove(data)}>
-                Delete
-              </ToolButton>
-            )}
-          </div>
-        )
+          )}
+          <ToolButton label={`Add a stage after ${label}`} onClick={() => actions?.addAfter(data)}>
+            Add after
+          </ToolButton>
+          {index > 0 && (
+            <ToolButton label={`Delete ${label}`} onClick={() => actions?.remove(data)}>
+              Delete
+            </ToolButton>
+          )}
+        </div>
       )}
       <Handle type="source" position={Position.Right} isConnectable={false} className="!opacity-0" />
     </div>
@@ -334,12 +320,10 @@ function ToolButton({ label, onClick, children }: { label: string; onClick: () =
 function InlineInput({
   label,
   initial,
-  placeholder,
   onDone,
 }: {
   label: string
   initial: string
-  placeholder?: string
   onDone: (value: string | null) => void
 }) {
   const [draft, setDraft] = useState(initial)
@@ -355,7 +339,6 @@ function InlineInput({
       autoFocus
       spellCheck={false}
       value={draft}
-      placeholder={placeholder}
       onChange={(e) => setDraft(e.target.value)}
       onKeyDown={(e) => {
         e.stopPropagation()

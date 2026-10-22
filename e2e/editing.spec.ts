@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test'
-import { editorLines, node, openApp, output, preview, SCREENS, USERS } from './app.ts'
+import { addStage, editorLines, node, openApp, output, preview, SCREENS, USERS } from './app.ts'
 
 /**
  * Editing on the canvas (Phase 5): every edit lands in the jq text as a
@@ -31,10 +31,7 @@ test('edits a node in place, splicing only its text', async ({ page }) => {
 test('adds a stage after a node, in the pipeline’s own style', async ({ page }) => {
   await preview(page, USERS, '.users\n| map(.name)')
   await node(page, 'map: map(.name)').click()
-  await action(page, 'Add a stage after map(.name)').click()
-  const field = page.getByRole('textbox', { name: 'New stage after map(.name)' })
-  await field.fill('length')
-  await field.press('Enter')
+  await addStage(page, 'map(.name)', 'custom', { jq: 'length' })
 
   await expect(editorLines(page)).toHaveText(['.users', '| map(.name)', '| length'])
   // the new node is selected, so Output shows its preview
@@ -45,10 +42,7 @@ test('adds a stage after a node, in the pipeline’s own style', async ({ page }
 test('adds the first stage after the input', async ({ page }) => {
   await preview(page, USERS, '.')
   await node(page, 'source: input').click()
-  await action(page, 'Add a stage after input').click()
-  const field = page.getByRole('textbox', { name: 'New stage after input' })
-  await field.fill('.users[0].name')
-  await field.press('Enter')
+  await addStage(page, 'input', 'pick', { Path: '.users[0].name' })
 
   await expect(editorLines(page)).toHaveText(['. | .users[0].name'])
   await expect(output(page)).toHaveText('"ada"')

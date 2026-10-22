@@ -36,6 +36,20 @@ export const output = (page: Page) => outputPane(page).locator('pre')
 /** The editor's text, one entry per line. */
 export const editorLines = (page: Page) => page.locator('.cm-content .cm-line')
 
+export const stagePane = (page: Page) => page.getByRole('region', { name: 'Stage' })
+
+/**
+ * Add a stage after the selected node `after` through the Stage pane's form:
+ * pick a kind, fill its fields by label, press Add.
+ */
+export async function addStage(page: Page, after: string, kind: string, fields: Record<string, string> = {}) {
+  await page.getByRole('button', { name: `Add a stage after ${after}`, exact: true }).click()
+  const form = page.getByRole('form', { name: `Add a stage after ${after}` })
+  await form.getByRole('combobox').selectOption(kind)
+  for (const [label, value] of Object.entries(fields)) await form.getByLabel(label, { exact: true }).fill(value)
+  await form.getByRole('button', { name: 'Add', exact: true }).click()
+}
+
 /** A canvas node, by its accessible name: "kind: text". */
 export const node = (page: Page, name: string) =>
   page.getByRole('region', { name: 'Pipeline' }).getByRole('group', { name, exact: true })

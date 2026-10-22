@@ -1,17 +1,20 @@
 import type { EditorView } from '@codemirror/view'
-import { useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react'
+import type { GraphNode } from '../core/parse/model.ts'
 import { JqEditor } from './JqEditor.tsx'
 import { OutputPane } from './OutputPane.tsx'
 import { PipelineCanvas } from './PipelineCanvas.tsx'
+import { StagePane, type Adding } from './StagePane.tsx'
 import { useAppStore } from './store.ts'
 import { useGraphEdits } from './useGraphEdits.ts'
 import { useJqParser } from './useJqParser.ts'
 import { usePreviews } from './usePreviews.ts'
 
 /**
- * Two views of one source string: the jq text (bottom left) and the pipeline
- * graph projected from it (top right), each node previewing its own output on
- * a sample of the input. The Output pane shows the selected node's preview.
+ * Two views of one source string: the jq text (left) and the pipeline graph
+ * projected from it (right), each node previewing its own output on a sample
+ * of the input. The Stage pane edits the selected node as fields; the Output
+ * pane shows its preview.
  */
 function useDebounced<T>(value: T, ms: number): T {
   const [debounced, setDebounced] = useState(value)
@@ -48,6 +51,34 @@ export function App() {
   const picked = nodes.findIndex((n) => n.id === selectedNodeId)
   const selectedIndex = picked === -1 ? nodes.length - 1 : picked
 
+  // A stage being added (the Stage pane's form), and where keyboard focus
+  // should land on the canvas afterwards.
+  const [adding, setAdding] = useState<Adding | null>(null)
+  const [focusRequest, setFocusRequest] = useState<{ id: string; seq: number } | null>(null)
+  const focusNode = useCallback((id: string) => setFocusRequest((r) => ({ id, seq: (r?.seq ?? 0) + 1 })), [])
+
+  const onSelect = useCallback(
+    (id: string) => {
+      selectNode(id)
+      // selecting another node ends an add in progress
+      setAdding((a) => (a && a.after.id !== id ? null : a))
+    },
+    [selectNode],
+  )
+  const onAddAfter = useCallback((after: GraphNode, index: number) => setAdding({ after, index }), [])
+  const onAdded = useCallback(
+    (index: number) => {
+      setAdding(null)
+      selectNode(`n${index}`)
+      focusNode(`n${index}`)
+    },
+    [selectNode, focusNode],
+  )
+  const onCancelAdd = useCallback(() => {
+    if (adding) focusNode(adding.after.id)
+    setAdding(null)
+  }, [adding, focusNode])
+
   return (
     <div className="flex h-full flex-col bg-neutral-950 text-neutral-100">
       <header className="flex items-center gap-2 border-b border-neutral-800 px-4 py-2">
@@ -55,42 +86,60 @@ export function App() {
         <span className="text-xs text-neutral-400">jq scratchpad</span>
       </header>
 
-      <main className="grid min-h-0 flex-1 grid-cols-[minmax(0,2fr)_minmax(0,3fr)] grid-rows-2">
-        <Pane label="Input JSON" className="border-b border-r border-neutral-800">
-          <textarea
-            aria-label="Input JSON"
-            spellCheck={false}
-            value={inputText}
-            onChange={(e) => setInputText(e.target.value)}
-            placeholder='{"users": [{"name": "ada"}]}'
-            className="h-full w-full resize-none bg-neutral-900 p-3 font-mono text-sm text-neutral-100 outline-none placeholder:text-neutral-500"
-          />
-        </Pane>
-
-        <Pane label="Pipeline" className="border-b border-neutral-800">
-          {model ? (
-            <PipelineCanvas
-              model={model}
-              results={previews.results}
-              running={previews.running}
-              selectedId={nodes[selectedIndex]?.id ?? null}
-              onSelect={selectNode}
-              edits={edits}
+      <main className="grid min-h-0 flex-1 grid-cols-[minmax(0,2fr)_minmax(0,3fr)]">
+        <div className="flex min-h-0 flex-col border-r border-neutral-800">
+          <Pane label="Input JSON" className="flex-1 border-b border-neutral-800">
+            <textarea
+              aria-label="Input JSON"
+              spellCheck={false}
+              value={inputText}
+              onChange={(e) => setInputText(e.target.value)}
+              placeholder='{"users": [{"name": "ada"}]}'
+              className="h-full w-full resize-none bg-neutral-900 p-3 font-mono text-sm text-neutral-100 outline-none placeholder:text-neutral-500"
             />
-          ) : parser.status === 'error' ? (
-            <p className="p-3 font-mono text-sm text-red-400">Parser failed to load: {parser.message}</p>
-          ) : (
-            <p className="p-3 font-mono text-sm text-neutral-400">Loading parser…</p>
+          </Pane>
+          <Pane label="jq filter" className="flex-1">
+            <JqEditor viewRef={editorView} />
+          </Pane>
+        </div>
+
+        <div className="flex min-h-0 flex-col">
+          <Pane label="Pipeline" className="flex-1 border-b border-neutral-800">
+            {model ? (
+              <PipelineCanvas
+                model={model}
+                results={previews.results}
+                running={previews.running}
+                selectedId={nodes[selectedIndex]?.id ?? null}
+                onSelect={onSelect}
+                edits={edits}
+                onAddAfter={onAddAfter}
+                focusRequest={focusRequest}
+              />
+            ) : parser.status === 'error' ? (
+              <p className="p-3 font-mono text-sm text-red-400">Parser failed to load: {parser.message}</p>
+            ) : (
+              <p className="p-3 font-mono text-sm text-neutral-400">Loading parser…</p>
+            )}
+          </Pane>
+
+          {model && (
+            <Pane label="Stage" className="shrink-0 border-b border-neutral-800">
+              <StagePane
+                model={model}
+                selectedIndex={selectedIndex}
+                edits={edits}
+                adding={adding}
+                onCancelAdd={onCancelAdd}
+                onAdded={onAdded}
+              />
+            </Pane>
           )}
-        </Pane>
 
-        <Pane label="jq filter" className="border-r border-neutral-800">
-          <JqEditor viewRef={editorView} />
-        </Pane>
-
-        <Pane label="Output">
-          <OutputPane source={source} input={input} model={model} previews={previews} selectedIndex={selectedIndex} />
-        </Pane>
+          <Pane label="Output" className="flex-1">
+            <OutputPane source={source} input={input} model={model} previews={previews} selectedIndex={selectedIndex} />
+          </Pane>
+        </div>
       </main>
     </div>
   )
