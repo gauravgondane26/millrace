@@ -5,10 +5,12 @@ import type { GraphNode } from '../core/parse/model.ts'
 import { JqEditor } from './JqEditor.tsx'
 import { OutputPane } from './OutputPane.tsx'
 import { PipelineCanvas } from './PipelineCanvas.tsx'
+import { ShareButton } from './Share.tsx'
 import { StagePane, type Adding } from './StagePane.tsx'
 import { useAppStore } from './store.ts'
 import { useGraphEdits } from './useGraphEdits.ts'
 import { useJqParser } from './useJqParser.ts'
+import { useSharedLinks } from './useSharedLinks.ts'
 import { usePreviews } from './usePreviews.ts'
 
 /**
@@ -44,6 +46,10 @@ export function App() {
   // Canvas edits dispatch through the editor, so its history covers them.
   const editorView = useRef<EditorView | null>(null)
   const edits = useGraphEdits(editorView, parser.status === 'ready' ? parser.parse : null)
+  // a share link pasted into this tab opens through the editor too
+  useSharedLinks(editorView)
+  const notice = useAppStore((s) => s.notice)
+  const setNotice = useAppStore((s) => s.setNotice)
 
   // The selected node, or the last one: the program's result.
   const selectedNodeId = useAppStore((s) => s.selectedNodeId)
@@ -83,7 +89,23 @@ export function App() {
     <div className="flex h-full flex-col bg-neutral-950 text-neutral-100">
       <header className="flex items-center gap-2 border-b border-neutral-800 px-4 py-2">
         <h1 className="text-sm font-semibold tracking-tight">millrace</h1>
-        <span className="text-xs text-neutral-400">jq scratchpad</span>
+        <span className="shrink-0 text-xs text-neutral-400">jq scratchpad</span>
+        {/* Always rendered: a live region must exist before its text changes.
+            The dismiss button sits outside it, so it isn't read out with the message. */}
+        <div role="status" className="min-w-0 flex-1 truncate text-right text-xs text-amber-300" title={notice ?? undefined}>
+          {notice}
+        </div>
+        {notice !== null && (
+          <button
+            type="button"
+            aria-label="Dismiss message"
+            onClick={() => setNotice(null)}
+            className="shrink-0 rounded px-1 text-xs text-neutral-400 hover:text-neutral-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-400"
+          >
+            ×
+          </button>
+        )}
+        <ShareButton editor={editorView} />
       </header>
 
       <main className="grid min-h-0 flex-1 grid-cols-[minmax(0,2fr)_minmax(0,3fr)]">

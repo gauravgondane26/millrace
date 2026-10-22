@@ -23,6 +23,10 @@ interface AppState {
 
   selectedNodeId: string | null
   selectNode: (id: string | null) => void
+
+  /** A one-line message in the header: a shared link opened, saving failed, ... */
+  notice: string | null
+  setNotice: (next: string | null) => void
 }
 
 export const useAppStore = create<AppState>((set) => ({
@@ -32,4 +36,6 @@ export const useAppStore = create<AppState>((set) => ({
   setInputText: (next) => set({ inputText: next }),
   selectedNodeId: null,
   selectNode: (id) => set({ selectedNodeId: id }),
+  notice: null,
+  setNotice: (next) => set({ notice: next }),
 }))
