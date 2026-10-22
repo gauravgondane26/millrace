@@ -128,6 +128,8 @@ correctness-critical decision lives, so it is the part that gets tests.
 - `npm run test:watch` — Vitest in watch mode
 - `npm test -- src/core/eval` — run one suite (path filter)
 - `npm test -- -t "cache invalidation"` — run tests matching a name
+- `npm run test:e2e` — Playwright against the production build (served on :4174);
+  screenshots land in `test-results/screens/`
 - `npm run build:grammar` — rebuild the jq grammar wasm (needs git and network)
 
 ## Status
@@ -193,6 +195,9 @@ whole source as one filter; per-node previews arrive with the canvas.
 tree-sitter: the CLI (a devDependency) downloads wasi-sdk (~590 MB) and binaryen
 into `%LOCALAPPDATA%\tree-sitter` on first use. No Emscripten or Docker needed.
 Nothing else needs building: jq comes prebuilt in `jq-wasm`.
+
+Playwright: its Chromium lives in `%LOCALAPPDATA%\ms-playwright`; on a new machine,
+run `npx playwright install chromium` once before `npm run test:e2e`.
 
 ## Testing
 
