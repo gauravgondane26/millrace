@@ -25,3 +25,16 @@ export function graphEditSpec(changes: ChangeSpec): TransactionSpec {
     annotations: [graphEdit.of(true), Transaction.userEvent.of('graph.edit')],
   }
 }
+
+/**
+ * The transaction for opening a shared link in a tab already running the
+ * app: it replaces the whole text, as one step of the editor's history, so
+ * undo brings back what was there. It is not a graph edit; the graph
+ * re-derives from the new text at once (core/parse/schedule).
+ */
+export function openSpec(current: { length: number }, text: string): TransactionSpec {
+  return {
+    changes: { from: 0, to: current.length, insert: text },
+    annotations: Transaction.userEvent.of('open'),
+  }
+}
