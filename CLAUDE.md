@@ -134,10 +134,11 @@ correctness-critical decision lives, so it is the part that gets tests.
 
 ## Status
 
-**Phases 1–6 done.** Paste JSON, edit jq in CodeMirror, on the React Flow canvas
+**Phases 1–7 done.** Paste JSON, edit jq in CodeMirror, on the React Flow canvas
 or as fields in the Stage pane, and see a preview on every node; the Output pane
-shows the selected node's. Previews run stage by stage on a sample of the input;
-"Run full" runs the whole program on the whole input.
+shows the selected node's. Object and array constructions fan out into lanes.
+Previews run stage by stage on a sample of the input; "Run full" runs the whole
+program on the whole input.
 
 - **Execution.** `src/worker/engine.ts` drives jq 1.8.2 itself (the `jq-wasm`
   package, pinned exactly), so previews are what jq produces. The engine was
@@ -159,15 +160,39 @@ shows the selected node's. Previews run stage by stage on a sample of the input;
   the worker once per input change (`core/eval/sample.ts`: every array cut to 200
   elements at any depth, at most 200 documents; text in, text out), then runs
   `runPipeline` with the source node as identity, so invalid input surfaces on
-  the input node. Results are per node (ok, error, or blocked by an earlier
-  error), cached including errors, and a newer edit abandons the run in flight.
+  the input node. Results are per node id (ok, error, or blocked, naming the
+  node whose error blocked it), cached including errors, and a newer edit
+  abandons the run in flight.
   Stage-by-stage previews equal the whole program except where a later stage
   reads `input`/`inputs` or `$__loc__`, or relies on stopping an earlier one
   early (`halt`, `error`); "Run full" (`src/ui/OutputPane.tsx`) is the exact jq
   answer, and any edit returns to previews.
+- **Fan-out (Phase 7).** An object or array construction stage (`{a: f, b: g}`,
+  `[f]`) is a custom node with `construct` lanes (`core/parse/model.ts`), not a
+  new kind: the eight-kind cap stands. Each object value, or an array's contents,
+  is a lane: a pipe chain projected by the usual rules, constructions included.
+  A shorthand entry (`{name}`, `{$v}`) is a lane with no stages, so nothing is
+  drawn for it. Ids are positional: `n3.1.0` is the first stage of lane 1 of
+  `n3`; `core/parse/graph.ts` has `flatten`, `locate` and `siblingId`.
+  Evaluation (`core/eval/cache.ts`): each lane runs on the construction's input,
+  then the construction runs its whole text once on that same input (jq's own
+  semantics, cartesian products and all, not a JS merge of lane outputs); a lane
+  error blocks the construction and shows on the lane stage. Editing a lane
+  stage recomputes the rest of its lane, the construction and downstream, never
+  the other lanes. Arguments of calls (`map({name})`) don't fan out. The grammar
+  is stricter than jq 1.8 in object values (jq takes `{n: .a + 1}`, `if`, `try`,
+  `reduce`; the grammar flags them): its recovery usually stays inside the entry,
+  which becomes one custom stage; when it leaks (`{a: .[0].x + 1, ...}`,
+  `if ... end`), the whole construction stays custom. A stage spliced into an
+  object value is parenthesized unless the grammar reads it as a term there
+  (`core/parse/term.ts`), so `.age * 2` lands as `(.age * 2)`.
 - **Canvas.** `src/ui/PipelineCanvas.tsx` derives React Flow nodes from the model
-  and results on every render; positions come from the node index and are never
-  stored (invariant 1), so nodes aren't draggable. It does carry React Flow's
+  and results on every render; positions come from `core/parse/layout.ts`
+  (grid cells: the top chain along row 0, a construction's lanes stacked in the
+  columns before it, the first on its row) and are never stored (invariant 1),
+  so nodes aren't draggable. Edges into and out of lanes bend in the gap beside
+  the construction or the stage feeding it, so they never cross another lane's
+  nodes; a lane's first stage shows its key. It does carry React Flow's
   measurements back into the nodes: without them React Flow hides nodes to
   re-measure on every render, which flickers and drops keyboard focus. Selection
   (click, or Enter on a focused node) is UI state in the store; with none, the
@@ -211,9 +236,10 @@ shows the selected node's. Previews run stage by stage on a sample of the input;
 - **Parsing.** `public/tree-sitter-jq.wasm` is flurie/tree-sitter-jq
   (BSD-3-Clause, notice shipped beside it) at a pinned commit, rebuilt by
   `npm run build:grammar`. nverno/tree-sitter-jq was rejected for being GPL-3.0.
-  `core/parse/parser.ts` loads it and `project.ts` flattens the pipe chain (rules
-  in its header). The grammar can't parse `@format` strings; those stages degrade
-  to custom nodes.
+  `core/parse/parser.ts` loads it and `project.ts` flattens the pipe chain and
+  projects constructions (rules in its header). The grammar can't parse
+  `@format` strings; those stages degrade to custom nodes. It lays an object
+  value's pipes out flat (no `query` node), so `project.ts` splits them itself.
 - **Offsets are UTF-16 code units, not bytes.** web-tree-sitter reports UTF-16
   indices for JS strings, the same unit as CodeMirror, so one `TextRange` type is
   used everywhere with no conversion. Where invariant 2 and the Stack section say
@@ -231,7 +257,7 @@ shows the selected node's. Previews run stage by stage on a sample of the input;
 - **Known rough edges.** A stage's compile error is jq's message about that
   stage's text alone (its line and column count from the stage, not the editor);
   map them to the stage's `TextRange` before pointing into the editor. The main
-  JS chunk is ~781 KB (237 KB gzipped): CodeMirror, React Flow and
+  JS chunk is ~797 KB (242 KB gzipped): CodeMirror, React Flow and
   web-tree-sitter; code-split it in the Quality-bar work. The canvas fits the
   chain down to 70% zoom, then pans; at narrow widths (under ~1,100 px of canvas)
   five or more nodes render small. The Stage pane's height follows the selected
