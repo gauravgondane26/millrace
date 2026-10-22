@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { SAMPLE_ITEMS } from '../core/eval/sample.ts'
-import type { GraphModel } from '../core/parse/model.ts'
+import { locate } from '../core/parse/graph.ts'
+import type { GraphModel, GraphNode } from '../core/parse/model.ts'
 import { formatInWorker, PREVIEW_OUTPUT_LIMIT, runInWorker, type RunOutput } from '../worker/client.ts'
-import { nodeLabel, summarize } from './summary.ts'
+import { kindLabel, nodeLabel, summarize } from './summary.ts'
 import type { Previews } from './usePreviews.ts'
 
 interface Props {
@@ -10,8 +11,8 @@ interface Props {
   input: string
   model: GraphModel | null
   previews: Previews
-  /** Index of the node whose preview is shown. */
-  selectedIndex: number
+  /** The node whose preview is shown. */
+  selected: GraphNode | null
 }
 
 type Shown =
@@ -25,9 +26,8 @@ type Shown =
  * previews are stage by stage on a sample, which differs only for filters
  * where a later stage reads `input` or `$__loc__`. Any edit returns to previews.
  */
-export function OutputPane({ source, input, model, previews, selectedIndex }: Props) {
+export function OutputPane({ source, input, model, previews, selected: node }: Props) {
   const full = useFullRun(source, input)
-  const node = model?.nodes[selectedIndex]
   const results = previews.results
 
   let shown: Shown
@@ -43,7 +43,7 @@ export function OutputPane({ source, input, model, previews, selectedIndex }: Pr
           ? { kind: 'error', message: full.state.message }
           : { kind: 'output', text: full.state.output.text, truncated: full.state.output.truncated, partial: false }
   } else {
-    const result = results?.[selectedIndex]
+    const result = node ? results?.get(node.id) : undefined
     // the canvas shows the node's kind; the caption names which node this is
     if (node) caption = nodeLabel(node)
     if (!result) {
@@ -54,12 +54,11 @@ export function OutputPane({ source, input, model, previews, selectedIndex }: Pr
     } else if (result.status === 'error') {
       shown = { kind: 'error', message: cleanMessage(result.error) }
     } else {
-      const failed = results?.findIndex((r) => r.status === 'error') ?? -1
-      const culprit = model?.nodes[failed]
-      const error = results?.[failed]
+      const culprit = model && locate(model, result.by)?.node
+      const error = results?.get(result.by)
       shown = {
         kind: 'error',
-        message: `Blocked by an error in ${culprit ? `${culprit.kind} ${nodeLabel(culprit)}` : 'an earlier step'}:\n\n${
+        message: `Blocked by an error in ${culprit ? `${kindLabel(culprit)} ${nodeLabel(culprit)}` : 'an earlier step'}:\n\n${
           error?.status === 'error' ? cleanMessage(error.error) : ''
         }`,
       }

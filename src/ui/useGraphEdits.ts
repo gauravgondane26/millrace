@@ -3,6 +3,7 @@ import type { EditorView } from '@codemirror/view'
 import { useMemo, type RefObject } from 'react'
 import type { GraphModel } from '../core/parse/model.ts'
 import type { ParseJq } from '../core/parse/parser.ts'
+import { termCheck } from '../core/parse/term.ts'
 import { deleteNode, insertAfter, replaceArg, replaceNode, type TextChange } from '../core/splice/edits.ts'
 import { graphEditSpec } from '../core/splice/transaction.ts'
 
@@ -25,9 +26,12 @@ export interface GraphEdits {
  * edit: the canvas draws from the committed source, which can lag typing by
  * the 200 ms debounce. Each edit also names the text the node is expected to
  * hold, so a node that changed underneath is refused rather than spliced.
+ * The parser also says whether new text can stand in an object value as is
+ * (core/parse/term), so it is parenthesized only where jq needs it.
  */
 export function useGraphEdits(editor: RefObject<EditorView | null>, parse: ParseJq | null): GraphEdits {
   return useMemo(() => {
+    const isTerm = parse ? termCheck(parse) : undefined
     const apply = (build: (model: GraphModel, source: string) => TextChange | null): boolean => {
       const view = editor.current
       if (!view || !parse) return false
@@ -41,12 +45,12 @@ export function useGraphEdits(editor: RefObject<EditorView | null>, parse: Parse
       if (editor.current) command(editor.current)
     }
     return {
-      replace: (id, expected, text) => apply((model) => replaceNode(model, id, expected, text)),
+      replace: (id, expected, text) => apply((model) => replaceNode(model, id, expected, text, isTerm)),
       replaceArg: (id, expected, argIndex, expectedArg, text) =>
         apply((model) => replaceArg(model, id, expected, argIndex, expectedArg, text)),
       remove: (id, expected) => apply((model) => deleteNode(model, id, expected)),
       insertAfter: (id, expected, text) =>
-        apply((model, source) => insertAfter(model, source, id, expected, text)),
+        apply((model, source) => insertAfter(model, source, id, expected, text, isTerm)),
       undo: history(undo),
       redo: history(redo),
     }

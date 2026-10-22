@@ -1,14 +1,14 @@
 import { useEffect, useRef, useState } from 'react'
-import { createCache, runPipeline, type NodeResult } from '../core/eval/cache.ts'
+import { createCache, runPipeline, type NodeResult, type PipelineNode } from '../core/eval/cache.ts'
 import { SAMPLE_ITEMS, type Sample } from '../core/eval/sample.ts'
-import type { GraphModel } from '../core/parse/model.ts'
+import type { GraphModel, GraphNode } from '../core/parse/model.ts'
 import { runFilterInWorker, sampleInWorker } from '../worker/client.ts'
 
 export interface Previews {
   /** The sample previews run on; null while there is no input. */
   sample: Sample | null
-  /** One result per graph node, in model order; null until a run completes. */
-  results: NodeResult[] | null
+  /** One result per graph node, by id; null until a run completes. */
+  results: ReadonlyMap<string, NodeResult> | null
   /** A run is in flight; `results` may still be the previous run's. */
   running: boolean
 }
@@ -23,7 +23,7 @@ export interface Previews {
  */
 export function usePreviews(model: GraphModel | null, input: string): Previews {
   const [sample, setSample] = useState<Sample | null>(null)
-  const [results, setResults] = useState<NodeResult[] | null>(null)
+  const [results, setResults] = useState<ReadonlyMap<string, NodeResult> | null>(null)
   const [running, setRunning] = useState(false)
   const cache = useRef(createCache())
 
@@ -47,7 +47,7 @@ export function usePreviews(model: GraphModel | null, input: string): Previews {
       return
     }
     const controller = new AbortController()
-    const stages = model.nodes.map((node, i) => ({ id: node.id, filter: i === 0 ? '.' : node.text }))
+    const stages = model.nodes.map(toStage)
     setRunning(true)
     runPipeline(stages, sample.text, runFilterInWorker, cache.current, controller.signal).then(
       (run) => {
@@ -60,4 +60,11 @@ export function usePreviews(model: GraphModel | null, input: string): Previews {
   }, [model, sample])
 
   return { sample, results, running }
+}
+
+/** A node as the runner sees it; the source node runs as identity. */
+function toStage(node: GraphNode): PipelineNode {
+  const filter = node.kind === 'source' ? '.' : node.text
+  const lanes = node.construct?.lanes.map((lane) => lane.nodes.map(toStage))
+  return lanes ? { id: node.id, filter, lanes } : { id: node.id, filter }
 }

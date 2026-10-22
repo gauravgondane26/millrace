@@ -1,5 +1,6 @@
 import type { EditorView } from '@codemirror/view'
 import { useCallback, useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react'
+import { locate } from '../core/parse/graph.ts'
 import type { GraphNode } from '../core/parse/model.ts'
 import { JqEditor } from './JqEditor.tsx'
 import { OutputPane } from './OutputPane.tsx'
@@ -47,9 +48,8 @@ export function App() {
   // The selected node, or the last one: the program's result.
   const selectedNodeId = useAppStore((s) => s.selectedNodeId)
   const selectNode = useAppStore((s) => s.selectNode)
-  const nodes = model?.nodes ?? []
-  const picked = nodes.findIndex((n) => n.id === selectedNodeId)
-  const selectedIndex = picked === -1 ? nodes.length - 1 : picked
+  const selected =
+    (model && selectedNodeId !== null ? locate(model, selectedNodeId)?.node : undefined) ?? model?.nodes.at(-1) ?? null
 
   // A stage being added (the Stage pane's form), and where keyboard focus
   // should land on the canvas afterwards.
@@ -67,10 +67,10 @@ export function App() {
   )
   const onAddAfter = useCallback((after: GraphNode, index: number) => setAdding({ after, index }), [])
   const onAdded = useCallback(
-    (index: number) => {
+    (id: string) => {
       setAdding(null)
-      selectNode(`n${index}`)
-      focusNode(`n${index}`)
+      selectNode(id)
+      focusNode(id)
     },
     [selectNode, focusNode],
   )
@@ -110,7 +110,7 @@ export function App() {
                 model={model}
                 results={previews.results}
                 running={previews.running}
-                selectedId={nodes[selectedIndex]?.id ?? null}
+                selectedId={selected?.id ?? null}
                 onSelect={onSelect}
                 edits={edits}
                 onAddAfter={onAddAfter}
@@ -126,8 +126,7 @@ export function App() {
           {model && (
             <Pane label="Stage" className="shrink-0 border-b border-neutral-800">
               <StagePane
-                model={model}
-                selectedIndex={selectedIndex}
+                selected={selected}
                 edits={edits}
                 adding={adding}
                 onCancelAdd={onCancelAdd}
@@ -137,7 +136,7 @@ export function App() {
           )}
 
           <Pane label="Output" className="flex-1">
-            <OutputPane source={source} input={input} model={model} previews={previews} selectedIndex={selectedIndex} />
+            <OutputPane source={source} input={input} model={model} previews={previews} selected={selected} />
           </Pane>
         </div>
       </main>

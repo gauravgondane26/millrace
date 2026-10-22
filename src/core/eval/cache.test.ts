@@ -11,7 +11,7 @@ function sixNodes(): PipelineNode[] {
 }
 
 const outputs = (r: Awaited<ReturnType<typeof runPipeline>>) =>
-  r.results.map((x) => (x.status === 'ok' ? x.output.text : x.status))
+  [...r.results.values()].map((x) => (x.status === 'ok' ? x.output.text : x.status))
 
 describe('runPipeline — cache invalidation (invariant 3)', () => {
   it('editing node 3 of 6 recomputes 3..6 and leaves 1,2 cached', async () => {
@@ -86,7 +86,7 @@ describe('runPipeline — failures', () => {
       async (filter: string, input: string): Promise<StageOutput> => ({ text: `${input} | ${filter}`, truncated: filter === 'f2' }),
     )
     const result = await runPipeline(sixNodes().slice(0, 4), 'in', run, createCache())
-    expect(result.results.map((r) => r.status === 'ok' && [r.output.truncated, r.partial])).toEqual([
+    expect([...result.results.values()].map((r) => r.status === 'ok' && [r.output.truncated, r.partial])).toEqual([
       [false, false],
       [true, false],
       [false, true],
@@ -107,5 +107,80 @@ describe('runPipeline — failures', () => {
 
     await expect(runPipeline(sixNodes(), 'in', run, cache, controller.signal)).rejects.toThrow('superseded')
     expect([...cache.keys()]).toEqual(['n1'])
+  })
+})
+
+describe('runPipeline — constructions fan out', () => {
+  /**
+   * n1 | {a: a1 | a2, b: b1} | n3: each lane runs on n1's output, the
+   * construction (filter "{…}") on n1's output too, n3 on the construction's.
+   */
+  function fanned(construction = '{a: a1 | a2, b: b1}', a2 = 'a2'): PipelineNode[] {
+    return [
+      { id: 'n1', filter: 'f1' },
+      {
+        id: 'n2',
+        filter: construction,
+        lanes: [
+          [
+            { id: 'n2.0.0', filter: 'a1' },
+            { id: 'n2.0.1', filter: a2 },
+          ],
+          [{ id: 'n2.1.0', filter: 'b1' }],
+        ],
+      },
+      { id: 'n3', filter: 'f3' },
+    ]
+  }
+
+  const byId = (r: Awaited<ReturnType<typeof runPipeline>>) =>
+    Object.fromEntries([...r.results].map(([id, x]) => [id, x.status === 'ok' ? x.output.text : x.status]))
+
+  it("runs each lane, and the construction, on the construction's input", async () => {
+    const result = await runPipeline(fanned(), 'in', runFilter, createCache())
+    expect(byId(result)).toEqual({
+      n1: 'in | f1',
+      'n2.0.0': 'in | f1 | a1',
+      'n2.0.1': 'in | f1 | a1 | a2',
+      'n2.1.0': 'in | f1 | b1',
+      n2: 'in | f1 | {a: a1 | a2, b: b1}',
+      n3: 'in | f1 | {a: a1 | a2, b: b1} | f3',
+    })
+    // lanes before their construction, the order previews depend on
+    expect(result.ran).toEqual(['n1', 'n2.0.0', 'n2.0.1', 'n2.1.0', 'n2', 'n3'])
+  })
+
+  it('editing a lane stage recomputes the rest of its lane, the construction and downstream only', async () => {
+    const cache = createCache()
+    await runPipeline(fanned(), 'in', runFilter, cache)
+    runFilter.mockClear()
+
+    const again = await runPipeline(fanned('{a: a1 | a2x, b: b1}', 'a2x'), 'in', runFilter, cache)
+    expect(again.ran).toEqual(['n2.0.1', 'n2', 'n3'])
+    expect(runFilter).toHaveBeenCalledTimes(3)
+  })
+
+  it('blocks the construction on a lane error, naming the failing stage', async () => {
+    const run = vi.fn(async (filter: string, input: string): Promise<StageOutput> => {
+      if (filter === 'a1') throw new Error('a1 failed')
+      return { text: `${input} | ${filter}`, truncated: false }
+    })
+    const result = await runPipeline(fanned(), 'in', run, createCache())
+    expect(byId(result)).toMatchObject({ 'n2.0.0': 'error', 'n2.0.1': 'blocked', 'n2.1.0': 'in | f1 | b1', n2: 'blocked', n3: 'blocked' })
+    expect(result.results.get('n2')).toEqual({ status: 'blocked', by: 'n2.0.0' })
+    expect(result.results.get('n3')).toEqual({ status: 'blocked', by: 'n2.0.0' })
+    // the construction never ran: its error would only repeat the lane's
+    expect(run).not.toHaveBeenCalledWith('{a: a1 | a2, b: b1}', expect.anything(), undefined)
+  })
+
+  it('blocks every lane when the stage feeding them failed', async () => {
+    const run = vi.fn(async (filter: string): Promise<StageOutput> => {
+      if (filter === 'f1') throw new Error('f1 failed')
+      return { text: filter, truncated: false }
+    })
+    const result = await runPipeline(fanned(), 'in', run, createCache())
+    expect([...result.results.values()].map((r) => r.status === 'blocked' && r.by)).toEqual([
+      false, 'n1', 'n1', 'n1', 'n1', 'n1',
+    ])
   })
 })

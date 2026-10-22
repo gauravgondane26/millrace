@@ -1,12 +1,15 @@
 import {
   Background,
+  BaseEdge,
   Controls,
+  getSmoothStepPath,
   Handle,
   Position,
   ReactFlow,
   ReactFlowProvider,
   useReactFlow,
   type Edge,
+  type EdgeProps,
   type Node,
   type NodeChange,
   type NodeProps,
@@ -25,21 +28,27 @@ import {
   type ReactNode,
 } from 'react'
 import type { NodeResult } from '../core/eval/cache.ts'
+import { chainIndex, flatten, siblingId } from '../core/parse/graph.ts'
+import { layout, type Link } from '../core/parse/layout.ts'
 import type { GraphModel, GraphNode } from '../core/parse/model.ts'
-import { nodeLabel, summarize, type Summary } from './summary.ts'
+import { kindLabel, nodeLabel, summarize, type Summary } from './summary.ts'
 import type { GraphEdits } from './useGraphEdits.ts'
 
 interface StageData extends Record<string, unknown> {
   node: GraphNode
+  /** Its place in its own chain (the top level, or a lane). */
   index: number
+  /** On a lane's first stage: the key it computes the value of. */
+  laneKey: string | null
   summary: Summary
 }
 
 type StageNode = Node<StageData, 'stage'>
+type FanEdge = Edge<{ role: Link['role'] }, 'fan'>
 
 interface Props {
   model: GraphModel
-  results: NodeResult[] | null
+  results: ReadonlyMap<string, NodeResult> | null
   running: boolean
   selectedId: string | null
   onSelect: (id: string) => void
@@ -63,12 +72,14 @@ const Actions = createContext<CanvasActions | null>(null)
 
 /**
  * The pipeline as a graph: one node per stage, left to right, each with a
- * one-line preview. Selecting a node (click, or Enter when focused) shows its
+ * one-line preview. An object or array construction fans out: each value's
+ * own pipe chain is a lane in the columns before it, one below another, its
+ * first stage tagged with the key it fills. Selecting a node (click, or Enter when focused) shows its
  * full preview in the Output pane and reveals its actions: edit (also
  * double-click or F2), add a stage after it, delete it.
  *
  * Everything here is derived from the model and results on each render.
- * Positions come from the node index and are never stored, so the canvas holds
+ * Positions come from the layout (core/parse/layout) and are never stored, so the canvas holds
  * no second model of the pipeline (invariant 1). Edits go out as text changes
  * through the editor (useGraphEdits), and the canvas re-derives from the text.
  */
@@ -81,6 +92,9 @@ export function PipelineCanvas(props: Props) {
 }
 
 const SPACING = 210
+const ROW = 120
+/** The cards' width, `w-[180px]`. */
+const CARD_WIDTH = 180
 // readable beats complete: a long chain pans rather than shrinking to fit
 const FIT = { padding: 0.15, minZoom: 0.7, maxZoom: 1 }
 
@@ -94,32 +108,47 @@ function Canvas({ model, results, running, selectedId, onSelect, edits, onAddAft
   // from the DOM, not a model of the pipeline.
   const measured = useRef(new Map<string, { width: number; height: number }>())
 
+  const grid = useMemo(() => {
+    const all = flatten(model)
+    const laneKeys = new Map<string, string>()
+    for (const node of all) {
+      for (const lane of node.construct?.lanes ?? []) {
+        const head = lane.nodes[0]
+        if (head && lane.key) laneKeys.set(head.id, lane.key.text)
+      }
+    }
+    return { all, laneKeys, ...layout(model) }
+  }, [model])
+
   const nodes = useMemo<StageNode[]>(
     () =>
-      model.nodes.map((node, index) => {
+      grid.all.map((node) => {
         const size = measured.current.get(node.id)
+        const cell = grid.cells.get(node.id) ?? { col: 0, row: 0 }
+        const laneKey = grid.laneKeys.get(node.id) ?? null
         return {
           id: node.id,
           type: 'stage',
-          position: { x: index * SPACING, y: 0 },
-          data: { node, index, summary: summarize(results?.[index], running) },
+          position: { x: cell.col * SPACING, y: cell.row * ROW },
+          data: { node, index: chainIndex(node.id), laneKey, summary: summarize(results?.get(node.id), running) },
           selected: node.id === selectedId,
-          ariaLabel: `${node.kind}: ${nodeLabel(node)}`,
+          ariaLabel: `${kindLabel(node)}: ${nodeLabel(node)}${laneKey === null ? '' : `, for key ${laneKey}`}`,
           ...(size ? { measured: size } : {}),
         }
       }),
-    [model, results, running, selectedId],
+    [grid, results, running, selectedId],
   )
 
-  const edges = useMemo<Edge[]>(
+  const edges = useMemo<(Edge | FanEdge)[]>(
     () =>
-      model.nodes.slice(1).map((node, i) => ({
-        id: `e${i}`,
-        source: model.nodes[i]?.id ?? '',
-        target: node.id,
+      grid.links.map(({ source, target, role }) => ({
+        id: `${source}->${target}`,
+        source,
+        target,
         focusable: false,
+        ...(role === 'next' ? {} : { type: 'fan' as const, data: { role } }),
       })),
-    [model],
+    [grid],
   )
 
   // Keyboard focus follows an edit to the node it lands on, once the canvas
@@ -159,7 +188,7 @@ function Canvas({ model, results, running, selectedId, onSelect, edits, onAddAft
         if (text === undefined || text === node.text) return land(node.id)
         // clearing a stage's text removes the stage
         if (text === '') {
-          if (edits.remove(node.id, node.text)) land(`n${index - 1}`)
+          if (edits.remove(node.id, node.text)) land(afterRemoving(node, index))
         } else {
           edits.replace(node.id, node.text, text)
           land(node.id)
@@ -167,7 +196,7 @@ function Canvas({ model, results, running, selectedId, onSelect, edits, onAddAft
       },
       addAfter: ({ node, index }) => onAddAfter(node, index),
       remove: ({ node, index }) => {
-        if (edits.remove(node.id, node.text)) land(`n${index - 1}`)
+        if (edits.remove(node.id, node.text)) land(afterRemoving(node, index))
       },
     }),
     [editing, edits, land, onAddAfter],
@@ -219,8 +248,9 @@ function Canvas({ model, results, running, selectedId, onSelect, edits, onAddAft
           nodes={nodes}
           edges={edges}
           nodeTypes={nodeTypes}
+          edgeTypes={edgeTypes}
           onNodesChange={onNodesChange}
-          onNodeDoubleClick={(_, node) => node.data.index > 0 && setEditing(node.id)}
+          onNodeDoubleClick={(_, node) => node.data.node.kind !== 'source' && setEditing(node.id)}
           colorMode="dark"
           fitView
           fitViewOptions={FIT}
@@ -250,18 +280,24 @@ const tone: Record<Summary['tone'], string> = {
 
 const StageCard = memo(function StageCard({ data, selected }: NodeProps<StageNode>) {
   const actions = useContext(Actions)
-  const { node, index, summary } = data
+  const { node, laneKey, summary } = data
   const label = nodeLabel(node)
   const editing = actions?.editing === node.id
+  const input = node.kind === 'source'
   const border = selected ? 'border-blue-400 ring-1 ring-blue-400' : 'border-neutral-600'
+  // dashed: jq the canvas can't take apart (a construction it can)
+  const opaque = node.kind === 'custom' && !node.construct
   return (
-    <div
-      className={`w-[180px] rounded-md border bg-neutral-900 px-3 py-2 ${border} ${
-        node.kind === 'custom' ? 'border-dashed' : ''
-      }`}
-    >
+    <div className={`w-[180px] rounded-md border bg-neutral-900 px-3 py-2 ${border} ${opaque ? 'border-dashed' : ''}`}>
       <Handle type="target" position={Position.Left} isConnectable={false} className="!opacity-0" />
-      <div className="text-[10px] font-medium uppercase tracking-wide text-neutral-400">{node.kind}</div>
+      <div className="flex items-baseline gap-2">
+        <span className="text-[10px] font-medium uppercase tracking-wide text-neutral-400">{kindLabel(node)}</span>
+        {laneKey !== null && (
+          <span className="ml-auto truncate font-mono text-[11px] text-sky-300" title={`Computes the value of ${laneKey}`}>
+            {laneKey}:
+          </span>
+        )}
+      </div>
       {editing ? (
         <InlineInput label={`Edit ${label}`} initial={node.text} onDone={(v) => actions?.commitEdit(data, v)} />
       ) : (
@@ -275,7 +311,7 @@ const StageCard = memo(function StageCard({ data, selected }: NodeProps<StageNod
           the node, and Tab moves from the node straight to them. */}
       {selected && !editing && (
         <div className="mt-2 flex gap-1">
-          {index > 0 && (
+          {!input && (
             <ToolButton label={`Edit ${label}`} onClick={() => actions?.startEditing(node.id)}>
               Edit
             </ToolButton>
@@ -283,7 +319,7 @@ const StageCard = memo(function StageCard({ data, selected }: NodeProps<StageNod
           <ToolButton label={`Add a stage after ${label}`} onClick={() => actions?.addAfter(data)}>
             Add after
           </ToolButton>
-          {index > 0 && (
+          {!input && (
             <ToolButton label={`Delete ${label}`} onClick={() => actions?.remove(data)}>
               Delete
             </ToolButton>
@@ -296,6 +332,36 @@ const StageCard = memo(function StageCard({ data, selected }: NodeProps<StageNod
 })
 
 const nodeTypes = { stage: StageCard }
+
+/**
+ * Where focus lands once a stage is removed: the stage before it in its
+ * chain or, for a lane's first stage, whatever takes its place (the next
+ * stage, or the `.` left when it was the only one).
+ */
+const afterRemoving = (node: GraphNode, index: number) => (index > 0 ? siblingId(node.id, index - 1) : node.id)
+
+/**
+ * An edge into or out of a lane. It bends in the gap beside the stage feeding
+ * the lanes (fan-out) or beside the construction (fan-in), where no node is
+ * drawn, so it never runs through another lane's stages.
+ */
+function FanEdgePath(props: EdgeProps<FanEdge>) {
+  const { sourceX, sourceY, sourcePosition, targetX, targetY, targetPosition, data, style } = props
+  const gap = (SPACING - CARD_WIDTH) / 2
+  const [path] = getSmoothStepPath({
+    sourceX,
+    sourceY,
+    sourcePosition,
+    targetX,
+    targetY,
+    targetPosition,
+    borderRadius: 8,
+    centerX: data?.role === 'fan-in' ? targetX - gap : sourceX + gap,
+  })
+  return <BaseEdge path={path} style={style} />
+}
+
+const edgeTypes = { fan: FanEdgePath }
 
 function ToolButton({ label, onClick, children }: { label: string; onClick: () => void; children: ReactNode }) {
   return (

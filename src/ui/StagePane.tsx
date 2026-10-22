@@ -7,24 +7,24 @@ import {
   type AddableKind,
   type Field,
 } from '../core/parse/kinds.ts'
-import type { GraphModel, GraphNode } from '../core/parse/model.ts'
+import { siblingId } from '../core/parse/graph.ts'
+import type { GraphNode } from '../core/parse/model.ts'
 import { nodeLabel } from './summary.ts'
 import type { GraphEdits } from './useGraphEdits.ts'
 
-/** A stage being added after `after`, the node at `index`. */
+/** A stage being added after `after`, the node at `index` in its chain. */
 export interface Adding {
   after: GraphNode
   index: number
 }
 
 interface Props {
-  model: GraphModel
-  selectedIndex: number
+  selected: GraphNode | null
   edits: GraphEdits
   adding: Adding | null
   onCancelAdd: () => void
-  /** A stage was added; it is the node at `index`. */
-  onAdded: (index: number) => void
+  /** A stage was added; this is its id. */
+  onAdded: (id: string) => void
 }
 
 /**
@@ -34,10 +34,9 @@ interface Props {
  * stage is edited as its whole jq text (invariant 5). Also hosts the form for
  * adding a stage, where the new stage's text is the only generated text.
  */
-export function StagePane({ model, selectedIndex, edits, adding, onCancelAdd, onAdded }: Props) {
+export function StagePane({ selected: node, edits, adding, onCancelAdd, onAdded }: Props) {
   if (adding) return <AddStage adding={adding} edits={edits} onCancel={onCancelAdd} onAdded={onAdded} />
 
-  const node = model.nodes[selectedIndex]
   if (!node) return null
   if (node.kind === 'source') return <Note>The input. Paste or edit it in the Input JSON pane.</Note>
   const fields = fieldsOf(node)
@@ -73,7 +72,7 @@ function AddStage({
   adding: Adding
   edits: GraphEdits
   onCancel: () => void
-  onAdded: (index: number) => void
+  onAdded: (id: string) => void
 }) {
   const [kind, setKind] = useState<AddableKind>('select')
   const [values, setValues] = useState<string[]>([])
@@ -82,7 +81,7 @@ function AddStage({
 
   const add = () => {
     if (!text) return
-    if (edits.insertAfter(adding.after.id, adding.after.text, text)) onAdded(adding.index + 1)
+    if (edits.insertAfter(adding.after.id, adding.after.text, text)) onAdded(siblingId(adding.after.id, adding.index + 1))
     else onCancel()
   }
 

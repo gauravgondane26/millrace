@@ -10,6 +10,9 @@ export interface Summary {
 /** The node's own text, or "input" for the source node. */
 export const nodeLabel = (node: GraphNode) => (node.kind === 'source' ? 'input' : node.text)
 
+/** What the node is: its kind, or for a construction, "object" or "array". */
+export const kindLabel = (node: GraphNode) => node.construct?.shape ?? node.kind
+
 const counted = new WeakMap<NodeResult, number>()
 
 /** Outputs are one value per line, so values = newlines (memoized per result). */
