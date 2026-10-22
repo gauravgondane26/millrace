@@ -143,9 +143,10 @@ Previews run stage by stage on a sample of the input; "Run full" runs the whole
 program on the whole input.
 
 **Phase 9 (quality bar) in progress.** Done: compile errors placed on their
-node and in the editor (see Errors). Left: no layout shift, keyboard and
-contrast checks, 50 MB inputs (virtualized views, code-splitting), license
-notices, and last, our own jq build with a larger heap.
+node and in the editor (see Errors); no layout shift (see Layout). Left:
+keyboard and contrast checks, canvas readability on narrow screens, 50 MB
+inputs (virtualized views, code-splitting), license notices, and last, our
+own jq build with a larger heap.
 
 - **Execution.** `src/worker/engine.ts` drives jq 1.8.2 itself (the `jq-wasm`
   package, pinned exactly), so previews are what jq produces. The engine was
@@ -289,9 +290,15 @@ notices, and last, our own jq build with a larger heap.
   JS chunk is ~810 KB (246 KB gzipped): CodeMirror, React Flow and
   web-tree-sitter; code-split it in the Quality-bar work. The canvas fits the
   chain down to 70% zoom, then pans; at narrow widths (under ~1,100 px of canvas)
-  five or more nodes render small. The Stage pane's height follows the selected
-  kind (a note, one or two fields, the three-line jq field, or the add form), so
-  selecting a node moves the Output pane's top edge; the canvas nodes stay put.
+  five or more nodes render small.
+- **Layout (no shift).** `e2e/layout.spec.ts` holds these. The Stage pane has
+  one fixed height (9.25rem, the add form for a custom stage being the
+  tallest; it scrolls at larger text sizes) and is there before the parser
+  loads: labels sit beside fields, and Add/Cancel follow the last field on
+  its row. The Output pane's notices are a one-line status bar at its foot,
+  always present. A card's status line has a fixed height, and its edge
+  handles sit a fixed 34 px from its top, so a selected card growing its
+  buttons moves no edge.
 
 ### Open issues (address all before calling the app done)
 
