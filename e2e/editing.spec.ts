@@ -100,6 +100,59 @@ test('clearing a node’s text deletes it; Escape cancels an edit', async ({ pag
   await expect(editorLines(page)).toHaveText(['.users | unique'])
 })
 
+test.describe('edge cases', () => {
+  test('clicking away commits an edit', async ({ page }) => {
+    await preview(page, USERS, '.users | map(.name)')
+    await node(page, 'map: map(.name)').dblclick()
+    await page.getByRole('textbox', { name: 'Edit map(.name)' }).fill('map(.age)')
+    await node(page, 'pick: .users').click()
+    await expect(editorLines(page)).toHaveText(['.users | map(.age)'])
+  })
+
+  test('double-clicking the input node does not edit it', async ({ page }) => {
+    await preview(page, USERS, '.users')
+    await node(page, 'source: input').dblclick()
+    await expect(page.getByRole('region', { name: 'Pipeline' }).getByRole('textbox')).toHaveCount(0)
+  })
+
+  test('two quick edits undo one at a time', async ({ page }) => {
+    await preview(page, USERS, '.users | map(.name) | unique | length')
+    await node(page, 'map: map(.name)').click()
+    await action(page, 'Delete map(.name)').click()
+    await node(page, 'unique: unique').click()
+    await action(page, 'Delete unique').click()
+    await expect(editorLines(page)).toHaveText(['.users | length'])
+
+    await page.keyboard.press('ControlOrMeta+z')
+    await expect(editorLines(page)).toHaveText(['.users | unique | length'])
+    await page.keyboard.press('ControlOrMeta+z')
+    await expect(editorLines(page)).toHaveText(['.users | map(.name) | unique | length'])
+  })
+
+  test('an edit that breaks the jq shows the error on its node', async ({ page }) => {
+    await preview(page, USERS, '.users | map(.name)')
+    await node(page, 'map: map(.name)').dblclick()
+    const field = page.getByRole('textbox', { name: 'Edit map(.name)' })
+    await field.fill('map(')
+    await field.press('Enter')
+    await expect(editorLines(page)).toHaveText(['.users | map('])
+    await expect(node(page, 'custom: map(')).toContainText('error')
+    await expect(output(page)).toHaveClass(/text-red/)
+  })
+
+  test('Tab reaches a node’s buttons, and Enter presses them', async ({ page }) => {
+    await preview(page, USERS, '.users | map(.name) | unique')
+    await node(page, 'map: map(.name)').focus()
+    await page.keyboard.press('Enter') // select it, revealing its buttons
+    await page.keyboard.press('Tab') // Edit
+    await page.keyboard.press('Tab') // Add after
+    await page.keyboard.press('Tab') // Delete
+    await expect(action(page, 'Delete map(.name)')).toBeFocused()
+    await page.keyboard.press('Enter')
+    await expect(editorLines(page)).toHaveText(['.users | unique'])
+  })
+})
+
 test('F2 edits the selected node from the keyboard', async ({ page }) => {
   await preview(page, USERS, '.users | map(.name)')
   await node(page, 'map: map(.name)').focus()

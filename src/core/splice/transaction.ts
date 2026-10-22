@@ -14,6 +14,10 @@ export const graphEdit = Annotation.define<boolean>()
  *
  * `changes` are UTF-16 offsets, the same unit as a node's TextRange, so a
  * projected node's range can be passed straight through.
+ *
+ * The `graph.edit` user event also keeps each graph edit its own undo step:
+ * CodeMirror's history only merges `input.type…` and `delete…` events (and
+ * unlabelled ones), so don't relabel these as either.
  */
 export function graphEditSpec(changes: ChangeSpec): TransactionSpec {
   return {

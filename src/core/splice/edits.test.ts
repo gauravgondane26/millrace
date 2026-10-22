@@ -90,6 +90,52 @@ describe('insertAfter', () => {
   })
 })
 
+describe('edge cases', () => {
+  it('keeps UTF-16 offsets right around non-ASCII text', () => {
+    const source = '"é😀" | .x | .y'
+    expect(apply(source, deleteNode(parse(source), ...target(source, '.x')))).toBe('"é😀" | .y')
+    expect(apply(source, replaceNode(parse(source), ...target(source, '.y'), '.z'))).toBe('"é😀" | .x | .z')
+    expect(apply(source, insertAfter(parse(source), source, ...target(source, '.x'), '.w'))).toBe('"é😀" | .x | .w | .y')
+  })
+
+  it('edits a stage the grammar could not parse (@format), as one custom node', () => {
+    const source = '.[] | @csv | length'
+    expect(apply(source, replaceNode(parse(source), ...target(source, '@csv'), '@tsv'))).toBe('.[] | @tsv | length')
+    expect(apply(source, deleteNode(parse(source), ...target(source, '@csv')))).toBe('.[] | length')
+  })
+
+  it('completes a half-typed stage', () => {
+    const source = '.users | map(.name'
+    const next = apply(source, replaceNode(parse(source), ...target(source, 'map(.name'), 'map(.name)'))
+    expect(next).toBe('.users | map(.name)')
+    expect(parse(next).nodes.map((n) => n.kind)).toEqual(['source', 'pick', 'map'])
+  })
+
+  it('splits a node in two when its new text holds a pipe', () => {
+    const source = '.users | unique'
+    const next = apply(source, replaceNode(parse(source), ...target(source, 'unique'), 'map(.name) | unique'))
+    expect(parse(next).nodes.map((n) => n.text)).toEqual(['', '.users', 'map(.name)', 'unique'])
+  })
+
+  it('treats a parenthesised pipe as one stage', () => {
+    const source = '(.a | .b) | .c'
+    expect(apply(source, deleteNode(parse(source), ...target(source, '.c')))).toBe('(.a | .b)')
+    expect(apply(source, deleteNode(parse(source), ...target(source, '(.a | .b)')))).toBe('.c')
+  })
+
+  it('copies a Windows line ending into the separator', () => {
+    const source = '.users\r\n| map(.name)'
+    const change = insertAfter(parse(source), source, ...target(source, 'map(.name)'), 'unique')
+    expect(apply(source, change)).toBe('.users\r\n| map(.name)\r\n| unique')
+  })
+
+  it('adds the first stage below a leading comment', () => {
+    const source = '# note\n.users | map(.x)'
+    const change = insertAfter(parse(source), source, ...target(source, ''), '.[0]')
+    expect(apply(source, change)).toBe('# note\n.[0] | .users | map(.x)')
+  })
+})
+
 describe('as editor transactions (invariants 6 and 7)', () => {
   it('a graph delete is one undo step that restores the text exactly', () => {
     const source = '.users\n| map(.name) # names\n| unique'
@@ -102,5 +148,23 @@ describe('as editor transactions (invariants 6 and 7)', () => {
     let undone: Transaction | undefined
     undo({ state, dispatch: (tr) => (undone = tr) })
     expect(undone?.state.doc.toString()).toBe(source)
+  })
+
+  it('two graph edits in quick succession are two undo steps, not one', () => {
+    // CodeMirror merges adjacent changes made within 500 ms into one history
+    // event; two deletes at the same spot, back to back, are exactly that.
+    const source = '.users | map(.name) | unique | length'
+    let state = EditorState.create({ doc: source, extensions: [history()] })
+    for (const text of ['map(.name)', 'unique']) {
+      const doc = state.doc.toString()
+      const change = deleteNode(parse(doc), ...target(doc, text))
+      if (!change) throw new Error('expected a change')
+      state = state.update(graphEditSpec(change)).state
+    }
+    expect(state.doc.toString()).toBe('.users | length')
+
+    let undone: Transaction | undefined
+    undo({ state, dispatch: (tr) => (undone = tr) })
+    expect(undone?.state.doc.toString()).toBe('.users | unique | length')
   })
 })
