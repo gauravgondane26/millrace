@@ -148,8 +148,12 @@ export function App() {
             )}
           </Pane>
 
-          {model && (
-            <Pane label="Stage" className="shrink-0 border-b border-neutral-800">
+          {/* One height for every kind (the add form for a custom stage is
+              the tallest), and there before the parser loads, so selecting a
+              node never moves the panes around it; at larger text sizes the
+              pane scrolls instead. */}
+          <Pane label="Stage" className="h-[9.25rem] shrink-0 border-b border-neutral-800">
+            <div className="h-full overflow-y-auto">
               <StagePane
                 selected={selected}
                 edits={edits}
@@ -157,8 +161,8 @@ export function App() {
                 onCancelAdd={onCancelAdd}
                 onAdded={onAdded}
               />
-            </Pane>
-          )}
+            </div>
+          </Pane>
 
           <Pane label="Output" className="flex-1">
             <OutputPane source={source} input={input} model={model} previews={previews} selected={selected} />

@@ -78,6 +78,20 @@ function AddStage({
   const [values, setValues] = useState<string[]>([])
   const text = stageText(kind, values)
   const kindId = useId()
+  const fields = newFieldsOf(kind)
+
+  // after the last control, in reading and Tab order, so the form is no
+  // taller than its fields (the Stage pane's height is fixed)
+  const actions = (
+    <div className="flex shrink-0 gap-2">
+      <button type="submit" disabled={!text} className={button}>
+        Add
+      </button>
+      <button type="button" onClick={onCancel} className={button}>
+        Cancel
+      </button>
+    </div>
+  )
 
   const add = () => {
     if (!text) return
@@ -95,8 +109,8 @@ function AddStage({
       }}
       onKeyDown={(e) => e.key === 'Escape' && onCancel()}
     >
-      <div className="flex items-center gap-2">
-        <label htmlFor={kindId} className="text-xs text-neutral-400">
+      <div className="flex min-w-0 items-center gap-2">
+        <label htmlFor={kindId} className="min-w-0 shrink truncate text-xs text-neutral-400">
           Add after <span className="font-mono text-neutral-100">{nodeLabel(adding.after)}</span>:
         </label>
         <select
@@ -115,11 +129,15 @@ function AddStage({
             </option>
           ))}
         </select>
+        {/* the jq this adds, so the form teaches the syntax it writes */}
+        <code className="ml-auto min-w-0 truncate text-xs text-neutral-400">{text ?? ''}</code>
+        {fields.length === 0 && actions}
       </div>
-      {newFieldsOf(kind).map((field, i) => (
+      {fields.map((field, i) => (
         <DraftField
           key={`${kind}:${i}`}
           field={field}
+          trailing={i === fields.length - 1 ? actions : null}
           value={values[i] ?? ''}
           onChange={(v) =>
             setValues((prev) => {
@@ -131,16 +149,6 @@ function AddStage({
           onSubmit={add}
         />
       ))}
-      <div className="flex items-center gap-2">
-        <button type="submit" disabled={!text} className={button}>
-          Add
-        </button>
-        <button type="button" onClick={onCancel} className={button}>
-          Cancel
-        </button>
-        {/* the jq this adds, so the form teaches the syntax it writes */}
-        <code className="min-w-0 truncate text-xs text-neutral-400">{text ?? ''}</code>
-      </div>
     </form>
   )
 }
@@ -217,14 +225,17 @@ function DraftField({
   value,
   onChange,
   onSubmit,
+  trailing,
 }: {
   field: Field
   value: string
   onChange: (v: string) => void
   onSubmit: () => void
+  /** Shown after the field, on its row: the form's buttons. */
+  trailing: ReactNode
 }) {
   return (
-    <Labelled label={field.label}>
+    <Labelled label={field.label} trailing={trailing}>
       {(id) =>
         field.multiline ? (
           <textarea
@@ -257,14 +268,24 @@ function DraftField({
   )
 }
 
-function Labelled({ label, children }: { label: string; children: (id: string) => ReactNode }) {
+/** A field with its label beside it, and anything that follows it on its row. */
+function Labelled({
+  label,
+  trailing,
+  children,
+}: {
+  label: string
+  trailing?: ReactNode
+  children: (id: string) => ReactNode
+}) {
   const id = useId()
   return (
-    <div className="flex flex-col gap-1">
-      <label htmlFor={id} className="text-xs text-neutral-400">
+    <div className="flex items-start gap-2">
+      <label htmlFor={id} className="w-32 shrink-0 pt-1 text-xs text-neutral-400">
         {label}
       </label>
-      {children(id)}
+      <div className="min-w-0 flex-1">{children(id)}</div>
+      {trailing && <div className="shrink-0 self-end">{trailing}</div>}
     </div>
   )
 }

@@ -282,6 +282,13 @@ const RF_ID = 'pipeline'
 const RF_NODE_HELP = `react-flow__node-desc-${RF_ID}`
 const statusId = (id: string) => `stage-status-${id}`
 
+/**
+ * Edges meet a card this far from its top, the middle of an unselected card,
+ * rather than halfway down: a selected card grows its buttons, and edges
+ * pinned to the middle would move with them.
+ */
+const HANDLE = { top: 34 }
+
 const tone: Record<Summary['tone'], string> = {
   ok: 'text-neutral-400',
   error: 'text-red-400',
@@ -299,7 +306,7 @@ const StageCard = memo(function StageCard({ data, selected }: NodeProps<StageNod
   const opaque = node.kind === 'custom' && !node.construct
   return (
     <div className={`w-[180px] rounded-md border bg-neutral-900 px-3 py-2 ${border} ${opaque ? 'border-dashed' : ''}`}>
-      <Handle type="target" position={Position.Left} isConnectable={false} className="!opacity-0" />
+      <Handle type="target" position={Position.Left} isConnectable={false} className="!opacity-0" style={HANDLE} />
       <div className="flex items-baseline gap-2">
         <span className="text-[10px] font-medium uppercase tracking-wide text-neutral-400">{kindLabel(node)}</span>
         {laneKey !== null && (
@@ -315,7 +322,7 @@ const StageCard = memo(function StageCard({ data, selected }: NodeProps<StageNod
           {label}
         </div>
       )}
-      <div className={`mt-1 truncate font-mono text-[11px] ${tone[summary.tone]}`}
+      <div className={`mt-1 h-4 truncate font-mono text-[11px] leading-4 ${tone[summary.tone]}`}
         id={statusId(node.id)}
         title={summary.text}
       >
@@ -341,7 +348,7 @@ const StageCard = memo(function StageCard({ data, selected }: NodeProps<StageNod
           )}
         </div>
       )}
-      <Handle type="source" position={Position.Right} isConnectable={false} className="!opacity-0" />
+      <Handle type="source" position={Position.Right} isConnectable={false} className="!opacity-0" style={HANDLE} />
     </div>
   )
 })

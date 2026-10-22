@@ -69,6 +69,12 @@ export function OutputPane({ source, input, model, previews, selected: node }: P
 
   const pretty = useFormatted(shown.kind === 'output' ? shown.text : '')
   const sampled = full.state.status === 'idle' && previews.sample?.sampled
+  const notices: string[] = []
+  if (sampled) notices.push(`Previewing a sample: arrays cut to ${SAMPLE_ITEMS} items. Run full for the complete result.`)
+  if (shown.kind === 'output' && shown.truncated) {
+    notices.push(`Output cut at ${PREVIEW_OUTPUT_LIMIT / 1_000_000} MB; the filter produces more.`)
+  }
+  if (shown.kind === 'output' && shown.partial) notices.push('Computed from output that was cut further up.')
 
   return (
     <div className="flex h-full flex-col">
@@ -82,15 +88,6 @@ export function OutputPane({ source, input, model, previews, selected: node }: P
         >
           Run full
         </button>
-      </div>
-      {/* Always rendered, even empty: a live region must exist before its
-          content changes, or screen readers may not announce it. */}
-      <div role="status" className="shrink-0 text-xs text-amber-300">
-        {sampled && <Notice>Previewing a sample: arrays cut to {SAMPLE_ITEMS} items. Run full for the complete result.</Notice>}
-        {shown.kind === 'output' && shown.truncated && (
-          <Notice>Output cut at {PREVIEW_OUTPUT_LIMIT / 1_000_000} MB; the filter produces more.</Notice>
-        )}
-        {shown.kind === 'output' && shown.partial && <Notice>Computed from output that was cut further up.</Notice>}
       </div>
       <div className="min-h-0 flex-1">
         {shown.kind === 'hint' && <Hint>{shown.text}</Hint>}
@@ -108,6 +105,17 @@ export function OutputPane({ source, input, model, previews, selected: node }: P
               {pretty}
             </pre>
           ))}
+      </div>
+      {/* Always rendered, even empty: a live region must exist before its
+          content changes, or screen readers may not announce it. A status
+          bar one line high whatever it says, so a preview that adds or drops
+          a notice never moves the output (the full text is in its title). */}
+      <div
+        role="status"
+        title={notices.join('\n')}
+        className="h-7 shrink-0 truncate border-t border-neutral-800 px-3 text-xs leading-7 text-amber-300"
+      >
+        {notices.join(' · ')}
       </div>
     </div>
   )
@@ -164,10 +172,6 @@ function useFormatted(text: string): string {
 function fullRunError(e: unknown, source: string): string {
   if (!(e instanceof EngineError) || e.kind !== 'compile') return messageOf(e)
   return describeCompileErrors(compileErrors(e.message, source), source, 0)
-}
-
-function Notice({ children }: { children: ReactNode }) {
-  return <p className="border-b border-neutral-800 px-3 py-1.5">{children}</p>
 }
 
 function Hint({ children }: { children: ReactNode }) {
