@@ -1,6 +1,8 @@
-import { useEffect, useState, type ReactNode } from 'react'
+import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { JqEditor } from './JqEditor.tsx'
+import { PipelineStrip } from './PipelineStrip.tsx'
 import { useAppStore } from './store.ts'
+import { useJqParser } from './useJqParser.ts'
 import { runFilterInWorker } from '../worker/client.ts'
 
 /**
@@ -34,6 +36,13 @@ export function App() {
   const inputText = useAppStore((s) => s.inputText)
   const setInputText = useAppStore((s) => s.setInputText)
   const input = useDebounced(inputText, 250)
+
+  // The graph model is derived from the source, never stored (invariant 1).
+  const parser = useJqParser()
+  const model = useMemo(
+    () => (parser.status === 'ready' ? parser.parse(source) : null),
+    [parser, source],
+  )
 
   const [preview, setPreview] = useState<Preview>({ status: 'empty' })
 
@@ -88,9 +97,12 @@ export function App() {
           </Pane>
         </div>
 
-        <Pane label="jq filter">
-          <JqEditor />
-        </Pane>
+        <div className="flex min-h-0 flex-col">
+          <Pane label="jq filter">
+            <JqEditor />
+          </Pane>
+          <PipelineStrip parser={parser} model={model} />
+        </div>
       </main>
     </div>
   )
