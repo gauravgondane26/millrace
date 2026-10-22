@@ -3,8 +3,8 @@
  * the source string. It is never edited directly and never serialized back to
  * jq by regeneration — see invariants 1 and 2 in CLAUDE.md.
  *
- * Each node carries the byte range it occupies in the source so that a graph
- * edit can be applied as a text splice (src/core/splice).
+ * Each node carries the range it occupies in the source so that a graph edit
+ * can be applied as a text splice (src/core/splice).
  */
 
 /** The eight structural node kinds, plus the opaque fallback. Hard cap. */
@@ -19,8 +19,14 @@ export type NodeKind =
   | 'limit'
   | 'custom'
 
-/** UTF-8 byte offsets, as reported by tree-sitter. Half-open: [start, end). */
-export interface ByteRange {
+/**
+ * Half-open [start, end) offsets in UTF-16 code units. This is the unit JS
+ * strings, CodeMirror and web-tree-sitter all use: web-tree-sitter reports
+ * UTF-16 indices when parsing a JS string, unlike native tree-sitter, which
+ * reports UTF-8 bytes. One unit everywhere means no conversion between the
+ * parser, the splice and the editor.
+ */
+export interface TextRange {
   start: number
   end: number
 }
@@ -30,8 +36,8 @@ export interface GraphNode {
   kind: NodeKind
   /** The exact source text this node was projected from. */
   text: string
-  /** Byte range of `text` within the source string. */
-  range: ByteRange
+  /** Where `text` sits in the source string. */
+  range: TextRange
 }
 
 /**

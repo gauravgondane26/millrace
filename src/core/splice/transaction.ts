@@ -12,8 +12,8 @@ export const graphEdit = Annotation.define<boolean>()
  * change, so CodeMirror's history records it and undo covers graph and text
  * edits alike (invariant 7). Never write the store directly from a graph edit.
  *
- * `changes` are in editor (UTF-16) offsets; callers holding tree-sitter byte
- * ranges must convert first.
+ * `changes` are UTF-16 offsets, the same unit as a node's TextRange, so a
+ * projected node's range can be passed straight through.
  */
 export function graphEditSpec(changes: ChangeSpec): TransactionSpec {
   return {
