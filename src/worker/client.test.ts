@@ -1,7 +1,7 @@
 import * as Comlink from 'comlink'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { EngineError } from './client.ts'
-import type { JqApi } from './jq.worker.ts'
+import type { JqApi } from './engine.ts'
 
 /**
  * The client's restart logic, against a fake Worker: a MessageChannel whose far

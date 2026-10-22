@@ -1,14 +1,16 @@
 import * as Comlink from 'comlink'
-import type { JqApi, RunOutput } from './jq.worker.ts'
+import type { JqApi, RunOutput } from './engine.ts'
 import type { RunFilter } from '../core/eval/cache.ts'
 
 export type { RunOutput }
 
 /**
- * Most compact output a preview keeps (invariant 4: previews are samples).
- * Also what stops `repeat(1)` from filling memory before the timeout.
+ * Most compact output a preview keeps, in characters (about 1 MB of typical
+ * JSON; invariant 4: previews are samples). jq buffers its whole output, so
+ * this bounds what is kept and shown, not how long a runaway filter runs:
+ * that is the timeout below, and jq's 256 MB heap.
  */
-export const PREVIEW_OUTPUT_BYTES = 1_000_000
+export const PREVIEW_OUTPUT_LIMIT = 1_000_000
 
 /** How an engine call failed. `crash` and `timeout` also restart the worker. */
 export type EngineErrorKind = 'input' | 'compile' | 'runtime' | 'crash' | 'timeout'
@@ -97,14 +99,14 @@ function call<T>(fn: (api: Comlink.Remote<JqApi>) => Promise<T>): Promise<T> {
   })
 }
 
-/** Run one filter in the worker, keeping at most `maxOutput` bytes of output. */
+/** Run one filter in the worker, keeping about `maxOutput` characters of output. */
 export const runInWorker = (
   filter: string,
   input: string,
-  maxOutput = PREVIEW_OUTPUT_BYTES,
+  maxOutput = PREVIEW_OUTPUT_LIMIT,
 ): Promise<RunOutput> => call((api) => api.run(filter, input, maxOutput))
 
-/** A {@link RunFilter} backed by the workered jaq instance. */
+/** A {@link RunFilter} backed by the workered jq instance. */
 export const runFilterInWorker: RunFilter = (filter, input) =>
   runInWorker(filter, input).then((out) => out.text)
 

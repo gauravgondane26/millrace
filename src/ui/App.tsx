@@ -3,7 +3,7 @@ import { JqEditor } from './JqEditor.tsx'
 import { PipelineStrip } from './PipelineStrip.tsx'
 import { useAppStore } from './store.ts'
 import { useJqParser } from './useJqParser.ts'
-import { formatInWorker, PREVIEW_OUTPUT_BYTES, runInWorker } from '../worker/client.ts'
+import { formatInWorker, PREVIEW_OUTPUT_LIMIT, runInWorker } from '../worker/client.ts'
 
 /**
  * The end-to-end loop works before the graph exists. The user pastes JSON,
@@ -139,7 +139,7 @@ function OutputView({ preview }: { preview: Preview }) {
     <div className="flex h-full flex-col">
       {preview.truncated && (
         <p role="status" className="shrink-0 border-b border-neutral-800 px-3 py-1.5 text-xs text-amber-300">
-          Output cut at {PREVIEW_OUTPUT_BYTES / 1_000_000} MB; the filter produces more.
+          Output cut at {PREVIEW_OUTPUT_LIMIT / 1_000_000} MB; the filter produces more.
         </p>
       )}
       <pre className="min-h-0 flex-1 overflow-auto p-3 font-mono text-sm text-neutral-100">
