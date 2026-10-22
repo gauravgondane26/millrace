@@ -142,6 +142,11 @@ The document survives a reload, and Share copies a link to it.
 Previews run stage by stage on a sample of the input; "Run full" runs the whole
 program on the whole input.
 
+**Phase 9 (quality bar) in progress.** Done: compile errors placed on their
+node and in the editor (see Errors). Left: no layout shift, keyboard and
+contrast checks, 50 MB inputs (virtualized views, code-splitting), license
+notices, and last, our own jq build with a larger heap.
+
 - **Execution.** `src/worker/engine.ts` drives jq 1.8.2 itself (the `jq-wasm`
   package, pinned exactly), so previews are what jq produces. The engine was
   jaq until jq's own test suites showed it diverging in common idioms
@@ -158,6 +163,16 @@ program on the whole input.
   an abandoned call (`AbortSignal`) still busy after 300 ms. Only that call
   fails: calls queued behind it are re-sent to a fresh worker, so no stage ever
   inherits (and caches) another stage's error.
+  A stage is compiled alone, so jq's line and column (1-based, UTF-8 bytes)
+  count from the stage's text: `core/eval/diagnose.ts` parses them out of the
+  message, converts them to a range in the stage and shifts it by the node's
+  `TextRange`, then redraws jq's caret diagram from the program's own line.
+  Error results carry the `filter` that failed, and a range is applied only
+  while the node still holds that text. `src/ui/errors.ts` turns a failure
+  into the card's one line (also the node's accessible description), the
+  Output pane's text, and editor diagnostics (`@codemirror/lint`,
+  `useEditorDiagnostics.ts`): what jq pointed at for a compile error, the
+  whole stage for any other; bad input marks nothing.
 - **Previews (invariants 3 and 4).** `src/ui/usePreviews.ts` samples the input in
   the worker once per input change (`core/eval/sample.ts`: every array cut to 200
   elements at any depth, at most 200 documents; text in, text out), then runs
@@ -270,9 +285,7 @@ program on the whole input.
   placeholder environment, `input_filename` is `"/dev/stdin"`, modules
   (`import`/`include`) can't load, and nesting thousands of levels deep
   overflows the wasm stack.
-- **Known rough edges.** A stage's compile error is jq's message about that
-  stage's text alone (its line and column count from the stage, not the editor);
-  map them to the stage's `TextRange` before pointing into the editor. The main
+- **Known rough edges.** The main
   JS chunk is ~810 KB (246 KB gzipped): CodeMirror, React Flow and
   web-tree-sitter; code-split it in the Quality-bar work. The canvas fits the
   chain down to 70% zoom, then pans; at narrow widths (under ~1,100 px of canvas)
