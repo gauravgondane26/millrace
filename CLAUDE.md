@@ -236,12 +236,8 @@ program on the whole input.
   through the editor as one undoable step (`openSpec`, committed at once like
   undo); its input replaces the input pane, which has no undo. Unreadable
   links, storage the browser refuses, and failed saves each post a notice in
-  the header (store `notice`, a live region). Several tabs: last save wins.
-- **Open checks before calling the app done.** The stale-range race (a canvas
-  edit within 200 ms of typing in the editor) is guarded and unit-tested
-  (`edits.ts` refuses a node whose text changed) but not exercised in a browser:
-  forcing that timing makes a flaky test. Try it by hand once the app is
-  finished; if an edit ever lands in the wrong place, fix it then.
+  the header (store `notice`, a live region). The trade-offs still open are
+  listed under "Open issues" below.
 - **JSON crosses the JS boundary as text, never as parsed JS values.** `JSON.parse`
   moves integer-like keys first and rounds big numbers. Input is jq's input
   format (zero or more JSON values, so several pasted documents are several
@@ -283,6 +279,34 @@ program on the whole input.
   five or more nodes render small. The Stage pane's height follows the selected
   kind (a note, one or two fields, the three-line jq field, or the add form), so
   selecting a node moves the Output pane's top edge; the canvas nodes stay put.
+
+### Open issues (address all before calling the app done)
+
+Known gaps, accepted for now so each phase could land. Each needs a fix, or an
+explicit decision to keep it, before the app is done. Remove an entry once it
+is resolved.
+
+1. **Stale-range race, unchecked in a browser.** A canvas edit within 200 ms of
+   typing in the editor is guarded and unit-tested (`edits.ts` refuses a node
+   whose text changed), but forcing that timing makes a flaky e2e test. Try it
+   by hand; if an edit ever lands in the wrong place, fix it.
+2. **Opening a share link loses the document it replaces.** At startup the
+   link's document overwrites the saved one, with no way back. In an open tab
+   the jq can be undone (Ctrl+Z in the editor), but the input pane has no undo,
+   so a link that carries input replaces yours for good. Any fix has to stay
+   within the persistence scope (IndexedDB working document plus URL fragment,
+   nothing else), or the scope has to change first.
+3. **Share links cap at 32,000 characters** (`MAX_FRAGMENT_LENGTH` in
+   `core/persist/share.ts`); past that, a link carries the jq only and says so.
+   Browsers take far longer URLs, but chat apps and address bars mangle them
+   sooner. Settle the limit, or offer the longer link with a warning.
+4. **Several tabs overwrite each other.** Each tab saves its own document to the
+   same IndexedDB records, and the last save wins, with no warning.
+5. **The last moments of typing can be lost on close.** Saves wait 300 ms, and
+   jq edits reach the store only after the 200 ms reparse debounce. The save on
+   `visibilitychange`/`pagehide` is asynchronous and doesn't include the editor's
+   uncommitted text, so closing a tab right after typing can drop the last
+   keystrokes.
 
 ### Toolchains on this machine
 
