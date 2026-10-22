@@ -136,13 +136,25 @@ output, and see the source projected into pipeline stages (a read-only strip und
 the editor until the React Flow canvas lands in Phase 4). Execution still runs the
 whole source as one filter; per-node previews arrive with the canvas.
 
-- **Execution.** `crates/jq-wasm` wraps jaq (`jaq-core`/`jaq-std`/`jaq-json` 3.x)
-  behind one export, `run(filter, inputs)`. The generated package is committed in
-  `src/worker/jqpkg` so the app builds without Rust; regenerate it with
-  `npm run build:wasm`. `src/worker/jqEngine.test.ts` guards it in Node.
-- **Stream convention.** A node's value is a JSON array of values. `run` applies
-  the filter to each element and concatenates all outputs, so node k's output
-  array is node k+1's input array. The user's pasted document is one value: `[doc]`.
+- **Execution.** `crates/jq-wasm` wraps jaq through `jaq-all` (the library behind
+  the jaq CLI) behind two exports, `run(filter, input)` and `format(text, indent)`.
+  The generated package is committed in `src/worker/jqpkg` so the app builds
+  without Rust; regenerate it with `npm run build:wasm`.
+  `src/worker/jqEngine.test.ts` guards it in Node. Natives the wasm target can't
+  run are replaced: `now` reads `Date.now()`, `env`/`$ENV` are `{}`, and stderr is
+  captured, so `halt_error` reports its message. `@csv`/`@tsv` come from
+  `jaq-fmts`' tabular writer alone.
+- **Errors.** The wasm throws JS Errors named `JqInputError`, `JqCompileError` and
+  `JqRuntimeError`. `src/worker/client.ts` maps them to `EngineError` kinds and
+  restarts the worker after a crash or a call running over 10 s (an infinite
+  filter would otherwise block every later preview).
+- **JSON crosses the JS boundary as text, never as parsed JS values.** `JSON.parse`
+  moves integer-like keys first and rounds big numbers. Input is jq's input
+  format (zero or more JSON values, so several pasted documents are several
+  inputs); output is one compact value per line, which is valid input again.
+  So node k's output text is node k+1's input as is, the eval cache stores text,
+  and display formatting comes from jaq (`format`). Parse JSON in JS only for
+  display, never to feed jaq.
 - **Editor.** CodeMirror holds the live text and history; its update listener is
   the only writer of `source` in the store. Graph edits must dispatch
   `graphEditSpec` (`core/splice/transaction.ts`) so undo covers them. Typing
@@ -157,14 +169,14 @@ whole source as one filter; per-node previews arrive with the canvas.
   indices for JS strings, the same unit as CodeMirror, so one `TextRange` type is
   used everywhere with no conversion. Where invariant 2 and the Stack section say
   "byte range", read "range".
-- **Known engine gaps (next up).** Input object keys come out sorted (the
-  wrapper's `serde_json` step). `now`, `env`, `halt` and `halt_error` trap the
-  wasm (later runs still work). `@csv`, `@tsv`, `@base32`/`@base32d`,
-  `input`/`inputs`, `$ENV` and `$__loc__` are undefined. Some jq builtins
-  (`tostream`, `IN`, `INDEX`, `leaf_paths`, `toarray`, ...) may be missing from
-  jaq itself.
-- **Known rough edges.** Engine errors show jaq's raw `Debug` text (readable,
-  node-mapped messages are a Quality-bar item). The main JS chunk is ~555 KB
+- **jq builtins jaq lacks.** `tostream`, `leaf_paths`, `IN`, `INDEX`, `toarray`,
+  `@base32`/`@base32d`, `$__loc__`, `builtins`, `input_line_number`, `ascii`,
+  `have_decnum`, `have_literal_numbers`, `$__prog_args` and `date`/`dateadd`
+  fail with "undefined filter". `ltrimstr`/`rtrimstr` on a non-string error in
+  jaq where jq returns the input unchanged. Previews differ from real jq there.
+- **Known rough edges.** Engine errors are readable (jaq's own reports) but not
+  yet mapped to the offending node; their spans are UTF-8 byte offsets, so
+  convert before comparing with a `TextRange`. The main JS chunk is ~555 KB
   (169 KB gzipped), mostly CodeMirror and web-tree-sitter; code-split it in the
   Quality-bar work. Previews run against the full input; sampling (invariant 4)
   comes with per-node previews.
