@@ -95,7 +95,9 @@ Pinned. Don't substitute without asking.
   load-bearing for invariant 6)
 - web-tree-sitter with a jq grammar for parsing. Error recovery and byte ranges are
   both required.
-- jaq compiled to WASM for execution, in a worker, via comlink
+- jq 1.8.2 compiled to WASM (the `jq-wasm` package, pinned exactly) for execution,
+  in a worker, via comlink. Chosen over jaq, which differs from jq in common
+  idioms (see Status).
 - Zustand for the small amount of UI state that isn't derived
 - Tailwind + Radix primitives
 - Vitest for unit tests
@@ -126,7 +128,6 @@ correctness-critical decision lives, so it is the part that gets tests.
 - `npm run test:watch` — Vitest in watch mode
 - `npm test -- src/core/eval` — run one suite (path filter)
 - `npm test -- -t "cache invalidation"` — run tests matching a name
-- `npm run build:wasm` — rebuild the jaq wasm package (needs the Rust toolchain)
 - `npm run build:grammar` — rebuild the jq grammar wasm (needs git and network)
 
 ## Status
@@ -136,27 +137,26 @@ output, and see the source projected into pipeline stages (a read-only strip und
 the editor until the React Flow canvas lands in Phase 4). Execution still runs the
 whole source as one filter; per-node previews arrive with the canvas.
 
-- **Execution.** `crates/jq-wasm` wraps jaq through `jaq-all` (the library behind
-  the jaq CLI) behind two exports, `run(filter, input)` and `format(text, indent)`.
-  The generated package is committed in `src/worker/jqpkg` so the app builds
-  without Rust; regenerate it with `npm run build:wasm`.
-  `src/worker/jqEngine.test.ts` guards it in Node. Natives the wasm target can't
-  run are replaced: `now` reads `Date.now()`, `env`/`$ENV` are `{}`, and stderr is
-  captured, so `halt_error` reports its message. `@csv`/`@tsv` come from
-  `jaq-fmts`' tabular writer alone.
-- **Errors.** The wasm throws JS Errors named `JqInputError`, `JqCompileError` and
-  `JqRuntimeError`. `src/worker/client.ts` maps them to `EngineError` kinds and
-  restarts the worker after a crash or a call running over 10 s (an infinite
-  filter would otherwise block every later preview). A preview keeps at most
-  1 MB of output (`PREVIEW_OUTPUT_BYTES`), so endless streams like `repeat(1)`
-  stop there instead of filling memory first.
+- **Execution.** `src/worker/engine.ts` drives jq 1.8.2 itself (the `jq-wasm`
+  package, pinned exactly), so previews are what jq produces. The engine was
+  jaq until jq's own test suites showed it diverging in common idioms
+  (assignment into missing paths, `del` key order, computed numbers): jq manual
+  examples passed 207/231 under jaq, 229/231 under jq-wasm. `engine.test.ts`
+  covers the wrapper; `jqManual.test.ts` runs every jq manual example (the two
+  that need `$PAGER` are skipped).
+- **Errors.** jq's exit codes are ambiguous (a compile error and `halt_error(3)`
+  both exit 3), so `engine.ts` reads stderr to name errors `JqInputError`,
+  `JqCompileError` or `JqRuntimeError`, dropping jq's "(at /dev/stdin:0)".
+  `src/worker/client.ts` maps them to `EngineError` kinds and restarts the
+  worker after a crash or a call running over 10 s (an infinite filter would
+  otherwise block every later preview).
 - **JSON crosses the JS boundary as text, never as parsed JS values.** `JSON.parse`
   moves integer-like keys first and rounds big numbers. Input is jq's input
   format (zero or more JSON values, so several pasted documents are several
-  inputs); output is one compact value per line, which is valid input again.
-  So node k's output text is node k+1's input as is, the eval cache stores text,
-  and display formatting comes from jaq (`format`). Parse JSON in JS only for
-  display, never to feed jaq.
+  inputs); output is one compact value per line (jq `-c`), which is valid input
+  again. So node k's output text is node k+1's input as is, the eval cache
+  stores text, and display formatting comes from jq (`format`, `--indent 2`).
+  Parse JSON in JS only for display, never to feed jq.
 - **Editor.** CodeMirror holds the live text and history; its update listener is
   the only writer of `source` in the store. Graph edits must dispatch
   `graphEditSpec` (`core/splice/transaction.ts`) so undo covers them. Typing
@@ -171,29 +171,28 @@ whole source as one filter; per-node previews arrive with the canvas.
   indices for JS strings, the same unit as CodeMirror, so one `TextRange` type is
   used everywhere with no conversion. Where invariant 2 and the Stack section say
   "byte range", read "range".
-- **jq builtins jaq lacks.** `tostream`, `leaf_paths`, `IN`, `INDEX`, `toarray`,
-  `@base32`/`@base32d`, `$__loc__`, `builtins`, `input_line_number`, `ascii`,
-  `have_decnum`, `have_literal_numbers`, `$__prog_args` and `date`/`dateadd`
-  fail with "undefined filter". `ltrimstr`/`rtrimstr` on a non-string error in
-  jaq where jq returns the input unchanged. Previews differ from real jq there.
-- **Known rough edges.** Engine errors are readable (jaq's own reports) but not
-  yet mapped to the offending node; their spans are UTF-8 byte offsets, so
-  convert before comparing with a `TextRange`. The main JS chunk is ~555 KB
+- **Engine limits (jq-wasm).** jq's heap is capped at 256 MB, so inputs above
+  roughly 20 MB abort (the worker restarts). The plan is our own jq build with a
+  larger heap as the last Phase 9 item; that build can also stop output mid-run.
+  Until then jq buffers its whole output: the preview limit
+  (`PREVIEW_OUTPUT_LIMIT`, ~1 MB) trims what is kept, and runaway filters are
+  bounded by the timeout and the heap (endlessly repeating a large value can
+  hold several hundred MB until the timeout). `$ENV`/`env` show Emscripten's
+  placeholder environment, `input_filename` is `"/dev/stdin"`, modules
+  (`import`/`include`) can't load, and nesting thousands of levels deep
+  overflows the wasm stack.
+- **Known rough edges.** Engine errors are readable (jq's own messages) but not
+  yet mapped to the offending node; jq reports a line and column rather than a
+  range, so convert before comparing with a `TextRange`. The main JS chunk is ~555 KB
   (169 KB gzipped), mostly CodeMirror and web-tree-sitter; code-split it in the
   Quality-bar work. Previews run against the full input; sampling (invariant 4)
   comes with per-node previews.
 
 ### Toolchains on this machine
 
-Rust: GNU host (`stable-x86_64-pc-windows-gnu`) with the `wasm32-unknown-unknown`
-target and a prebuilt `wasm-pack`. Shells started before the install may not have
-`~/.cargo/bin` on PATH, so prepend it. An old 32-bit `C:\MinGW\bin` on PATH breaks
-host builds of crates that need `dlltool` (e.g. `windows-sys`). The jaq wrapper
-doesn't pull any of those in. If a future dependency does, install a 64-bit
-MinGW-w64 rather than building around it.
-
 tree-sitter: the CLI (a devDependency) downloads wasi-sdk (~590 MB) and binaryen
 into `%LOCALAPPDATA%\tree-sitter` on first use. No Emscripten or Docker needed.
+Nothing else needs building: jq comes prebuilt in `jq-wasm`.
 
 ## Testing
 
