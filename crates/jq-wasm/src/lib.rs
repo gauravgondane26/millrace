@@ -22,7 +22,7 @@ use jaq_json::read;
 use jaq_json::write::{self, Pp};
 use jaq_json::{Error, Map, Val};
 use jaq_std::ValT;
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen]
@@ -41,14 +41,21 @@ extern "C" {
 thread_local! {
     /// What the filter wrote to stderr during this run (`stderr`, `halt_error`).
     static STDERR: RefCell<String> = const { RefCell::new(String::new()) };
+    /// Whether the last run stopped at `max_output` (see [`truncated`]).
+    static TRUNCATED: Cell<bool> = const { Cell::new(false) };
 }
 
 /// Apply `filter` to each JSON value in `input`, returning every output value
 /// as compact JSON, one per line. Throws an `Error` named `JqInputError`,
 /// `JqCompileError` or `JqRuntimeError` with a readable message.
+///
+/// Stops once the output reaches `max_output` bytes, at a value boundary, and
+/// sets [`truncated`]: a filter like `repeat(1)` never ends, and collecting its
+/// output would exhaust memory long before the worker's timeout fires.
 #[wasm_bindgen]
-pub fn run(filter: &str, input: &str) -> Result<String, JsValue> {
+pub fn run(filter: &str, input: &str, max_output: usize) -> Result<String, JsValue> {
     STDERR.with(|s| s.borrow_mut().clear());
+    TRUNCATED.set(false);
 
     let compiled = jaq_all::compile_with(filter, jaq_all::defs(), funs(), &["ENV".into()])
         .map_err(|reports| fail("JqCompileError", render(&reports)))?;
@@ -67,7 +74,11 @@ pub fn run(filter: &str, input: &str) -> Result<String, JsValue> {
             Ok(v) => {
                 write::write(&mut out, &Pp::default(), 0, &v).expect("write to Vec");
                 out.push(b'\n');
-                Ok(())
+                if out.len() >= max_output {
+                    Err(Stop::Truncated)
+                } else {
+                    Ok(())
+                }
             }
             Err(exn) => Err(match exn.get_err() {
                 Ok(err) => Stop::Runtime(err.to_string()),
@@ -79,6 +90,10 @@ pub fn run(filter: &str, input: &str) -> Result<String, JsValue> {
     match result {
         // `halt` ends the program successfully, keeping what was output so far.
         Ok(()) | Err(Stop::Halt(0)) => Ok(String::from_utf8_lossy(&out).into_owned()),
+        Err(Stop::Truncated) => {
+            TRUNCATED.set(true);
+            Ok(String::from_utf8_lossy(&out).into_owned())
+        }
         Err(Stop::Halt(code)) => {
             let stderr = STDERR.with(|s| s.borrow().clone());
             let message = if stderr.is_empty() {
@@ -113,11 +128,18 @@ pub fn format(text: &str, indent: usize) -> Result<String, JsValue> {
     Ok(String::from_utf8_lossy(&out).into_owned())
 }
 
+/// Whether the last [`run`] stopped at its `max_output` before the filter ended.
+#[wasm_bindgen]
+pub fn truncated() -> bool {
+    TRUNCATED.get()
+}
+
 /// Why a run stopped early.
 enum Stop {
     Input(String),
     Runtime(String),
     Halt(i32),
+    Truncated,
 }
 
 fn fail(name: &str, message: impl AsRef<str>) -> JsValue {

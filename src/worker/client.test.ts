@@ -17,7 +17,10 @@ class FakeWorker {
   constructor() {
     const { port1, port2 } = new MessageChannel()
     Comlink.expose(
-      { run: (f: string, i: string) => behavior.run(f, i), format: (t: string, n: number) => behavior.format(t, n) },
+      {
+        run: (f: string, i: string, max: number) => behavior.run(f, i, max),
+        format: (t: string, n: number) => behavior.format(t, n),
+      },
       port2,
     )
     this.port = port1
@@ -57,7 +60,7 @@ async function rejection(promise: Promise<unknown>): Promise<EngineError> {
 
 beforeEach(() => {
   vi.stubGlobal('Worker', FakeWorker)
-  behavior = { run: async (f, i) => `${i} | ${f}`, format: async (t) => t }
+  behavior = { run: async (f, i) => ({ text: `${i} | ${f}`, truncated: false }), format: async (t) => t }
 })
 
 afterEach(() => {
@@ -80,7 +83,7 @@ describe('worker client', () => {
     const e = await rejection(runFilterInWorker('nope', '1'))
     expect([e.kind, e.message]).toEqual(['compile', 'undefined filter'])
 
-    behavior.run = async () => 'ok'
+    behavior.run = async () => ({ text: 'ok', truncated: false })
     await runFilterInWorker('.', '1')
     expect(workers).toHaveLength(1)
   })
@@ -93,7 +96,7 @@ describe('worker client', () => {
     expect((await rejection(runFilterInWorker('.', '1'))).kind).toBe('crash')
     expect(workers[0]?.terminated).toBe(true)
 
-    behavior.run = async () => 'ok'
+    behavior.run = async () => ({ text: 'ok', truncated: false })
     expect(await runFilterInWorker('.', '1')).toBe('ok')
     expect(workers).toHaveLength(2)
   })
@@ -101,9 +104,9 @@ describe('worker client', () => {
   it('stops a filter that never finishes, failing every call queued on it', async () => {
     vi.useFakeTimers()
     const { runFilterInWorker } = await loadClient()
-    behavior.run = () => new Promise(() => {}) // e.g. repeat(1)
+    behavior.run = () => new Promise(() => {}) // e.g. until(false; .), which outputs nothing
 
-    const first = rejection(runFilterInWorker('repeat(1)', '1'))
+    const first = rejection(runFilterInWorker('until(false; .)', '1'))
     const queued = rejection(runFilterInWorker('.', '1'))
     await vi.advanceTimersByTimeAsync(10_000)
 
@@ -111,7 +114,7 @@ describe('worker client', () => {
     expect((await queued).kind).toBe('timeout')
     expect(workers[0]?.terminated).toBe(true)
 
-    behavior.run = async () => 'ok'
+    behavior.run = async () => ({ text: 'ok', truncated: false })
     expect(await runFilterInWorker('.', '1')).toBe('ok')
     expect(workers).toHaveLength(2)
   })

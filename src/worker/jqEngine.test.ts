@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { beforeAll, describe, expect, it } from 'vitest'
-import { format, initSync, run } from './jqpkg/jq_wasm.js'
+import { format, initSync, run as runCapped, truncated } from './jqpkg/jq_wasm.js'
 
 /**
  * Integration test for the jaq WASM engine (crates/jq-wasm). Loads the committed
@@ -9,6 +9,9 @@ import { format, initSync, run } from './jqpkg/jq_wasm.js'
  * guarded in CI. JSON goes in and out as text: input is zero or more JSON
  * values, output is one compact value per line.
  */
+/** No output cap: wasm-bindgen passes max_output as a u32. */
+const run = (filter: string, input: string) => runCapped(filter, input, 0xffffffff)
+
 beforeAll(() => {
   const wasmPath = fileURLToPath(new URL('./jqpkg/jq_wasm_bg.wasm', import.meta.url))
   initSync({ module: readFileSync(wasmPath) })
@@ -91,6 +94,16 @@ describe('jaq wasm engine', () => {
 
   it('reports invalid input', () => {
     expect(thrown(() => run('.', '{')).name).toBe('JqInputError')
+  })
+
+  it('stops at the output cap, at a value boundary', () => {
+    // bounded by limit() so a broken cap fails fast instead of hanging
+    const out = runCapped('limit(1000000; repeat(1))', 'null', 100)
+    expect(out).toBe('1\n'.repeat(50))
+    expect(truncated()).toBe(true)
+
+    run('1, 2', 'null')
+    expect(truncated()).toBe(false)
   })
 
   it('pretty-prints output for display, keeping key order', () => {

@@ -32,11 +32,16 @@ export function format(text, indent) {
  * Apply `filter` to each JSON value in `input`, returning every output value
  * as compact JSON, one per line. Throws an `Error` named `JqInputError`,
  * `JqCompileError` or `JqRuntimeError` with a readable message.
+ *
+ * Stops once the output reaches `max_output` bytes, at a value boundary, and
+ * sets [`truncated`]: a filter like `repeat(1)` never ends, and collecting its
+ * output would exhaust memory long before the worker's timeout fires.
  * @param {string} filter
  * @param {string} input
+ * @param {number} max_output
  * @returns {string}
  */
-export function run(filter, input) {
+export function run(filter, input, max_output) {
     let deferred4_0;
     let deferred4_1;
     try {
@@ -44,7 +49,7 @@ export function run(filter, input) {
         const len0 = WASM_VECTOR_LEN;
         const ptr1 = passStringToWasm0(input, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
         const len1 = WASM_VECTOR_LEN;
-        const ret = wasm.run(ptr0, len0, ptr1, len1);
+        const ret = wasm.run(ptr0, len0, ptr1, len1, max_output);
         var ptr3 = ret[0];
         var len3 = ret[1];
         if (ret[3]) {
@@ -57,6 +62,15 @@ export function run(filter, input) {
     } finally {
         wasm.__wbindgen_free(deferred4_0, deferred4_1, 1);
     }
+}
+
+/**
+ * Whether the last [`run`] stopped at its `max_output` before the filter ended.
+ * @returns {boolean}
+ */
+export function truncated() {
+    const ret = wasm.truncated();
+    return ret !== 0;
 }
 function __wbg_get_imports() {
     const import0 = {

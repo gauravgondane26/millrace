@@ -3,7 +3,7 @@ import { JqEditor } from './JqEditor.tsx'
 import { PipelineStrip } from './PipelineStrip.tsx'
 import { useAppStore } from './store.ts'
 import { useJqParser } from './useJqParser.ts'
-import { formatInWorker, runFilterInWorker } from '../worker/client.ts'
+import { formatInWorker, PREVIEW_OUTPUT_BYTES, runInWorker } from '../worker/client.ts'
 
 /**
  * The end-to-end loop works before the graph exists. The user pastes JSON,
@@ -14,7 +14,7 @@ import { formatInWorker, runFilterInWorker } from '../worker/client.ts'
 type Preview =
   | { status: 'empty' }
   | { status: 'loading' }
-  | { status: 'ok'; text: string }
+  | { status: 'ok'; text: string; truncated: boolean }
   | { status: 'error'; message: string }
 
 function cleanMessage(e: unknown): string {
@@ -55,10 +55,13 @@ export function App() {
     setPreview({ status: 'loading' })
     // The input goes to jaq as raw text: JSON.parse here would reorder
     // integer-like keys and round big numbers. jaq formats the output too.
-    runFilterInWorker(source, input)
-      .then((out) => (out === '' ? '' : formatInWorker(out)))
-      .then((text) => {
-        if (!cancelled) setPreview({ status: 'ok', text })
+    runInWorker(source, input)
+      .then(async (out) => ({
+        text: out.text === '' ? '' : await formatInWorker(out.text),
+        truncated: out.truncated,
+      }))
+      .then(({ text, truncated }) => {
+        if (!cancelled) setPreview({ status: 'ok', text, truncated })
       })
       .catch((e) => {
         if (!cancelled) setPreview({ status: 'error', message: cleanMessage(e) })
@@ -133,9 +136,16 @@ function OutputView({ preview }: { preview: Preview }) {
     return <Hint>No output (filter produced an empty stream).</Hint>
   }
   return (
-    <pre className="h-full w-full overflow-auto p-3 font-mono text-sm text-neutral-100">
-      {preview.text}
-    </pre>
+    <div className="flex h-full flex-col">
+      {preview.truncated && (
+        <p role="status" className="shrink-0 border-b border-neutral-800 px-3 py-1.5 text-xs text-amber-300">
+          Output cut at {PREVIEW_OUTPUT_BYTES / 1_000_000} MB; the filter produces more.
+        </p>
+      )}
+      <pre className="min-h-0 flex-1 overflow-auto p-3 font-mono text-sm text-neutral-100">
+        {preview.text}
+      </pre>
+    </div>
   )
 }
 

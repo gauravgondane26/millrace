@@ -1,6 +1,14 @@
 import * as Comlink from 'comlink'
-import type { JqApi } from './jq.worker.ts'
+import type { JqApi, RunOutput } from './jq.worker.ts'
 import type { RunFilter } from '../core/eval/cache.ts'
+
+export type { RunOutput }
+
+/**
+ * Most compact output a preview keeps (invariant 4: previews are samples).
+ * Also what stops `repeat(1)` from filling memory before the timeout.
+ */
+export const PREVIEW_OUTPUT_BYTES = 1_000_000
 
 /** How an engine call failed. `crash` and `timeout` also restart the worker. */
 export type EngineErrorKind = 'input' | 'compile' | 'runtime' | 'crash' | 'timeout'
@@ -89,9 +97,16 @@ function call<T>(fn: (api: Comlink.Remote<JqApi>) => Promise<T>): Promise<T> {
   })
 }
 
+/** Run one filter in the worker, keeping at most `maxOutput` bytes of output. */
+export const runInWorker = (
+  filter: string,
+  input: string,
+  maxOutput = PREVIEW_OUTPUT_BYTES,
+): Promise<RunOutput> => call((api) => api.run(filter, input, maxOutput))
+
 /** A {@link RunFilter} backed by the workered jaq instance. */
 export const runFilterInWorker: RunFilter = (filter, input) =>
-  call((api) => api.run(filter, input))
+  runInWorker(filter, input).then((out) => out.text)
 
 /** Pretty-print JSON text in the worker, for display. */
 export const formatInWorker = (text: string, indent = 2): Promise<string> =>

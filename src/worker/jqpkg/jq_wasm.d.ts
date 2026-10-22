@@ -11,15 +11,25 @@ export function format(text: string, indent: number): string;
  * Apply `filter` to each JSON value in `input`, returning every output value
  * as compact JSON, one per line. Throws an `Error` named `JqInputError`,
  * `JqCompileError` or `JqRuntimeError` with a readable message.
+ *
+ * Stops once the output reaches `max_output` bytes, at a value boundary, and
+ * sets [`truncated`]: a filter like `repeat(1)` never ends, and collecting its
+ * output would exhaust memory long before the worker's timeout fires.
  */
-export function run(filter: string, input: string): string;
+export function run(filter: string, input: string, max_output: number): string;
+
+/**
+ * Whether the last [`run`] stopped at its `max_output` before the filter ended.
+ */
+export function truncated(): boolean;
 
 export type InitInput = RequestInfo | URL | Response | BufferSource | WebAssembly.Module;
 
 export interface InitOutput {
     readonly memory: WebAssembly.Memory;
     readonly format: (a: number, b: number, c: number) => [number, number, number, number];
-    readonly run: (a: number, b: number, c: number, d: number) => [number, number, number, number];
+    readonly run: (a: number, b: number, c: number, d: number, e: number) => [number, number, number, number];
+    readonly truncated: () => number;
     readonly __wbindgen_externrefs: WebAssembly.Table;
     readonly __wbindgen_malloc: (a: number, b: number) => number;
     readonly __wbindgen_realloc: (a: number, b: number, c: number, d: number) => number;

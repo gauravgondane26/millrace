@@ -147,7 +147,9 @@ whole source as one filter; per-node previews arrive with the canvas.
 - **Errors.** The wasm throws JS Errors named `JqInputError`, `JqCompileError` and
   `JqRuntimeError`. `src/worker/client.ts` maps them to `EngineError` kinds and
   restarts the worker after a crash or a call running over 10 s (an infinite
-  filter would otherwise block every later preview).
+  filter would otherwise block every later preview). A preview keeps at most
+  1 MB of output (`PREVIEW_OUTPUT_BYTES`), so endless streams like `repeat(1)`
+  stop there instead of filling memory first.
 - **JSON crosses the JS boundary as text, never as parsed JS values.** `JSON.parse`
   moves integer-like keys first and rounds big numbers. Input is jq's input
   format (zero or more JSON values, so several pasted documents are several
