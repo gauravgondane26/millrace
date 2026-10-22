@@ -1,12 +1,13 @@
 import { useEffect, useState, type ReactNode } from 'react'
+import { JqEditor } from './JqEditor.tsx'
 import { useAppStore } from './store.ts'
 import { runFilterInWorker } from '../worker/client.ts'
 
 /**
- * Phase 1 shell: the end-to-end loop works before the graph exists. The user
- * pastes JSON, types a jq filter (treated as one opaque filter for now), and
- * sees live output computed in the worker (invariant 4). The graph projection
- * replaces the plain editor/canvas panes in a later phase.
+ * The end-to-end loop works before the graph exists. The user pastes JSON,
+ * edits jq in CodeMirror (treated as one opaque filter for now), and sees live
+ * output computed in the worker (invariant 4). The graph canvas joins once
+ * parsing lands.
  */
 type Preview =
   | { status: 'empty' }
@@ -18,43 +19,50 @@ function cleanMessage(e: unknown): string {
   return String(e instanceof Error ? e.message : e).replace(/^Error:\s*/, '')
 }
 
+function useDebounced<T>(value: T, ms: number): T {
+  const [debounced, setDebounced] = useState(value)
+  useEffect(() => {
+    const timer = setTimeout(() => setDebounced(value), ms)
+    return () => clearTimeout(timer)
+  }, [value, ms])
+  return debounced
+}
+
 export function App() {
+  // Already debounced by the editor (invariant 6); only the input needs it here.
   const source = useAppStore((s) => s.source)
-  const setSource = useAppStore((s) => s.setSource)
   const inputText = useAppStore((s) => s.inputText)
   const setInputText = useAppStore((s) => s.setInputText)
+  const input = useDebounced(inputText, 250)
 
   const [preview, setPreview] = useState<Preview>({ status: 'empty' })
 
   useEffect(() => {
-    if (inputText.trim() === '') {
+    if (input.trim() === '') {
       setPreview({ status: 'empty' })
       return
     }
+    let value: unknown
+    try {
+      value = JSON.parse(input)
+    } catch {
+      setPreview({ status: 'error', message: 'Input is not valid JSON.' })
+      return
+    }
     let cancelled = false
-    const timer = setTimeout(() => {
-      let value: unknown
-      try {
-        value = JSON.parse(inputText)
-      } catch {
-        if (!cancelled) setPreview({ status: 'error', message: 'Input is not valid JSON.' })
-        return
-      }
-      setPreview({ status: 'loading' })
-      // One filter against the one-value input stream (invariant 3 semantics).
-      runFilterInWorker(source, [value])
-        .then((out) => {
-          if (!cancelled) setPreview({ status: 'ok', values: out as unknown[] })
-        })
-        .catch((e) => {
-          if (!cancelled) setPreview({ status: 'error', message: cleanMessage(e) })
-        })
-    }, 250)
+    setPreview({ status: 'loading' })
+    // One filter against the one-value input stream (invariant 3 semantics).
+    runFilterInWorker(source, [value])
+      .then((out) => {
+        if (!cancelled) setPreview({ status: 'ok', values: out as unknown[] })
+      })
+      .catch((e) => {
+        if (!cancelled) setPreview({ status: 'error', message: cleanMessage(e) })
+      })
     return () => {
       cancelled = true
-      clearTimeout(timer)
     }
-  }, [source, inputText])
+  }, [source, input])
 
   return (
     <div className="flex h-full flex-col bg-neutral-950 text-neutral-100">
@@ -81,13 +89,7 @@ export function App() {
         </div>
 
         <Pane label="jq filter">
-          <textarea
-            aria-label="jq filter source"
-            spellCheck={false}
-            value={source}
-            onChange={(e) => setSource(e.target.value)}
-            className="h-full w-full resize-none bg-neutral-900 p-3 font-mono text-sm text-neutral-100 outline-none"
-          />
+          <JqEditor />
         </Pane>
       </main>
     </div>

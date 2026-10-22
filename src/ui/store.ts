@@ -10,6 +10,11 @@ import { create } from 'zustand'
 interface AppState {
   /** The single source of truth. Everything on the canvas is projected from it. */
   source: string
+  /**
+   * Called only by the editor's update listener (ui/JqEditor). Anything else
+   * that changes the text, graph edits included, must dispatch a CodeMirror
+   * transaction instead, or undo stops covering it (invariant 7).
+   */
   setSource: (next: string) => void
 
   /** Raw JSON the user pasted, as text. */
