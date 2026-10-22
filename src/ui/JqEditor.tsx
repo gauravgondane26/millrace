@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, type MutableRefObject } from 'react'
 import { defaultKeymap, history, historyKeymap } from '@codemirror/commands'
 import { bracketMatching } from '@codemirror/language'
 import { EditorState } from '@codemirror/state'
@@ -20,8 +20,10 @@ import { useAppStore } from './store.ts'
  * graph edits and undo/redo commit at once (invariant 6, core/parse/schedule).
  *
  * Tab is deliberately not bound to indent: it would trap keyboard focus.
+ *
+ * `viewRef` hands the view to graph edits, which must dispatch through it.
  */
-export function JqEditor() {
+export function JqEditor({ viewRef }: { viewRef?: MutableRefObject<EditorView | null> }) {
   const hostRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -61,12 +63,14 @@ export function JqEditor() {
         ],
       }),
     })
+    if (viewRef) viewRef.current = view
 
     return () => {
       if (timer !== undefined) commit(view)
+      if (viewRef?.current === view) viewRef.current = null
       view.destroy()
     }
-  }, [])
+  }, [viewRef])
 
   // The focus ring is an overlay rather than an outline on the editor: CM's
   // sticky gutter paints over anything drawn inside the editor's own box.

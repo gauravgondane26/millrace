@@ -1,8 +1,10 @@
-import { useEffect, useId, useMemo, useState, type ReactNode } from 'react'
+import type { EditorView } from '@codemirror/view'
+import { useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react'
 import { JqEditor } from './JqEditor.tsx'
 import { OutputPane } from './OutputPane.tsx'
 import { PipelineCanvas } from './PipelineCanvas.tsx'
 import { useAppStore } from './store.ts'
+import { useGraphEdits } from './useGraphEdits.ts'
 import { useJqParser } from './useJqParser.ts'
 import { usePreviews } from './usePreviews.ts'
 
@@ -34,6 +36,10 @@ export function App() {
     [parser, source],
   )
   const previews = usePreviews(model, input)
+
+  // Canvas edits dispatch through the editor, so its history covers them.
+  const editorView = useRef<EditorView | null>(null)
+  const edits = useGraphEdits(editorView, parser.status === 'ready' ? parser.parse : null)
 
   // The selected node, or the last one: the program's result.
   const selectedNodeId = useAppStore((s) => s.selectedNodeId)
@@ -69,6 +75,7 @@ export function App() {
               running={previews.running}
               selectedId={nodes[selectedIndex]?.id ?? null}
               onSelect={selectNode}
+              edits={edits}
             />
           ) : parser.status === 'error' ? (
             <p className="p-3 font-mono text-sm text-red-400">Parser failed to load: {parser.message}</p>
@@ -78,7 +85,7 @@ export function App() {
         </Pane>
 
         <Pane label="jq filter" className="border-r border-neutral-800">
-          <JqEditor />
+          <JqEditor viewRef={editorView} />
         </Pane>
 
         <Pane label="Output">
