@@ -23,7 +23,7 @@
     "noImplicitOverride": true,
     "exactOptionalPropertyTypes": true,
 
-    "types": ["vitest/globals"]
+    "types": ["vitest/globals", "node"]
   },
   "include": ["src"]
 }
