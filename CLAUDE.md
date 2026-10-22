@@ -180,6 +180,11 @@ whole program on the whole input.
   is the editor's undo. Edits re-project the editor's live text at the moment of
   the edit and name the text the node should hold, so a node that changed in the
   last 200 ms is refused rather than spliced at a stale range.
+- **Open checks before calling the app done.** The stale-range race (a canvas
+  edit within 200 ms of typing in the editor) is guarded and unit-tested
+  (`edits.ts` refuses a node whose text changed) but not exercised in a browser:
+  forcing that timing makes a flaky test. Try it by hand once the app is
+  finished; if an edit ever lands in the wrong place, fix it then.
 - **JSON crosses the JS boundary as text, never as parsed JS values.** `JSON.parse`
   moves integer-like keys first and rounds big numbers. Input is jq's input
   format (zero or more JSON values, so several pasted documents are several
