@@ -87,7 +87,7 @@ test.describe('sampling (invariant 4)', () => {
   test('previews a sample, and Run full runs the whole program on the whole input', async ({ page }) => {
     const big = JSON.stringify(Array.from({ length: 300 }, (_, i) => i))
     await expectOutput(page, big, 'length', '200')
-    await expect(page.getByRole('status')).toHaveText(
+    await expect(outputPane(page).getByRole('status')).toHaveText(
       'Previewing a sample: arrays cut to 200 items. Run full for the complete result.',
     )
     await page.screenshot({ path: `${SCREENS}/sampled.png` })
@@ -95,7 +95,7 @@ test.describe('sampling (invariant 4)', () => {
     await page.getByRole('button', { name: 'Run full' }).click()
     await expect(output(page)).toHaveText('300')
     await expect(outputPane(page)).toContainText('Whole program on the whole input')
-    await expect(page.getByRole('status')).toHaveText('')
+    await expect(outputPane(page).getByRole('status')).toHaveText('')
 
     // an edit goes back to the sample
     await page.getByRole('textbox', { name: 'jq filter source' }).click()
@@ -135,7 +135,7 @@ test.describe('errors, in jq’s words', () => {
 test.describe('runaway filters', () => {
   test('cuts long output at 1 MB, and says so', async ({ page }) => {
     await preview(page, USERS, 'limit(600000; repeat(1))')
-    await expect(page.getByRole('status')).toHaveText('Output cut at 1 MB; the filter produces more.')
+    await expect(outputPane(page).getByRole('status')).toHaveText('Output cut at 1 MB; the filter produces more.')
     await page.screenshot({ path: `${SCREENS}/output-cut.png` })
   })
 
