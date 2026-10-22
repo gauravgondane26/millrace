@@ -134,10 +134,10 @@ correctness-critical decision lives, so it is the part that gets tests.
 
 ## Status
 
-**Phases 1–4 done.** Paste JSON, edit jq in CodeMirror, and see the source
-projected onto a React Flow canvas (read-only until Phase 5) with a preview on
-every node; the Output pane shows the selected node's. Previews run stage by stage
-on a sample of the input; "Run full" runs the whole program on the whole input.
+**Phases 1–5 done.** Paste JSON, edit jq in CodeMirror or on the React Flow
+canvas, and see a preview on every node; the Output pane shows the selected
+node's. Previews run stage by stage on a sample of the input; "Run full" runs the
+whole program on the whole input.
 
 - **Execution.** `src/worker/engine.ts` drives jq 1.8.2 itself (the `jq-wasm`
   package, pinned exactly), so previews are what jq produces. The engine was
@@ -167,8 +167,19 @@ on a sample of the input; "Run full" runs the whole program on the whole input.
   answer, and any edit returns to previews.
 - **Canvas.** `src/ui/PipelineCanvas.tsx` derives React Flow nodes from the model
   and results on every render; positions come from the node index and are never
-  stored (invariant 1), so nodes aren't draggable. Selection (click, or Enter on
-  a focused node) is UI state in the store; with none, the last node is shown.
+  stored (invariant 1), so nodes aren't draggable. It does carry React Flow's
+  measurements back into the nodes: without them React Flow hides nodes to
+  re-measure on every render, which flickers and drops keyboard focus. Selection
+  (click, or Enter on a focused node) is UI state in the store; with none, the
+  last node is shown.
+- **Graph editing (invariants 2, 6, 7).** The selected node's card offers Edit
+  (also double-click or F2), Add after and Delete. `core/splice/edits.ts` turns
+  each into one minimal text change (a new stage copies the user's separator
+  style), and `src/ui/useGraphEdits.ts` dispatches it through the editor with
+  `graphEditSpec`, so it commits at once and undo covers it; Ctrl+Z on the canvas
+  is the editor's undo. Edits re-project the editor's live text at the moment of
+  the edit and name the text the node should hold, so a node that changed in the
+  last 200 ms is refused rather than spliced at a stale range.
 - **JSON crosses the JS boundary as text, never as parsed JS values.** `JSON.parse`
   moves integer-like keys first and rounds big numbers. Input is jq's input
   format (zero or more JSON values, so several pasted documents are several
