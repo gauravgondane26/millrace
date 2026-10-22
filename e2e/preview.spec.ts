@@ -74,7 +74,7 @@ test.describe('the canvas', () => {
 
   test('marks a failing stage, and blocks the ones after it', async ({ page }) => {
     await preview(page, USERS, '.users | map(.name + 1) | length')
-    await expect(node(page, 'map: map(.name + 1)')).toContainText('error')
+    await expect(node(page, 'map: map(.name + 1)')).toContainText('string ("ada") and number (1) cannot be added')
     await expect(node(page, 'custom: length')).toContainText('blocked by an earlier error')
     await expect(output(page)).toHaveText(
       'Blocked by an error in map map(.name + 1): string ("ada") and number (1) cannot be added',
@@ -111,11 +111,37 @@ test.describe('errors, in jq’s words', () => {
       page,
       USERS,
       '.users | map(.name',
-      // regexes match the raw text: newlines and the caret's indentation included
-      /^syntax error, unexpected end of file, expecting ';' or '\)' at <top-level>, line 1, column 5:\n {4}map\(\.name\n {8}\^\^\^\^\^$/,
+      // regexes match the raw text: newlines and the caret's indentation included.
+      // jq compiled the stage alone; the line and column are the editor's.
+      /^syntax error, unexpected end of file, expecting ';' or '\)' at line 1, column 14:\n {4}\.users \| map\(\.name\n {17}\^\^\^\^\^$/,
     )
-    await expect(node(page, 'custom: map(.name')).toContainText('error')
+    const stage = node(page, 'custom: map(.name')
+    await expect(stage).toContainText("syntax error, unexpected end of file, expecting ';' or ')'")
+    // a screen reader hears it as the node's description
+    await expect(stage).toHaveAccessibleDescription(/^syntax error, unexpected end of file/)
+    // and the editor marks what jq pointed at
+    await expect(page.locator('.cm-lintRange-error')).toHaveText('.name')
     await page.screenshot({ path: `${SCREENS}/compile-error.png` })
+  })
+
+  test('compile error in a later line, placed in the program', async ({ page }) => {
+    await expectError(
+      page,
+      USERS,
+      '.users[]\n| select(.age ==)',
+      /^syntax error, unexpected '\)' at line 2, column 17:\n {4}\| select\(\.age ==\)\n {20}\^$/,
+    )
+    await expect(page.locator('.cm-lintRange-error')).toHaveText(')')
+  })
+
+  test('runtime error, marked on its stage in the editor', async ({ page }) => {
+    await preview(page, USERS, '.users | map(.name + 1)')
+    await expect(page.locator('.cm-lintRange-error')).toHaveText('map(.name + 1)')
+    // fixing it clears the mark
+    for (let i = 0; i < 4; i++) await page.keyboard.press('Backspace')
+    await page.keyboard.type(')')
+    await expect(output(page)).toHaveText('[ "ada", "grace" ]')
+    await expect(page.locator('.cm-lintRange-error')).toHaveCount(0)
   })
 
   test('runtime error', async ({ page }) => {
@@ -124,7 +150,9 @@ test.describe('errors, in jq’s words', () => {
 
   test('invalid input, on the input node', async ({ page }) => {
     await expectError(page, '{"a":', '.', 'input is not valid JSON: Unfinished JSON term at EOF at line 1, column 5')
-    await expect(node(page, 'source: input')).toContainText('error')
+    await expect(node(page, 'source: input')).toContainText('input is not valid JSON')
+    // bad input isn't the program's fault: nothing is marked in the editor
+    await expect(page.locator('.cm-lintRange-error')).toHaveCount(0)
   })
 
   test('halt_error message', async ({ page }) => {

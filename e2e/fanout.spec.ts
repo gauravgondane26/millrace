@@ -52,7 +52,7 @@ test('keeps a value the grammar cannot read as one custom stage, still previewed
 test('an error in a lane stays on its stage, and blocks the construction', async ({ page }) => {
   await preview(page, USERS, '.users | {a: first | error("boom"), b: length}')
   await expect(node(page, 'custom: first, for key a')).toContainText('1 value · {"name":"ada","age":36}')
-  await expect(node(page, 'custom: error("boom")')).toContainText('error')
+  await expect(node(page, 'custom: error("boom")')).toContainText('boom')
   await expect(node(page, 'custom: length, for key b')).toContainText('1 value · 2')
   await expect(node(page, 'object: {a: first | error("boom"), b: length}')).toContainText('blocked by an earlier error')
   await expect(output(page)).toHaveText('Blocked by an error in custom error("boom"): boom')
