@@ -110,6 +110,7 @@ src/
     parse/       source -> CST -> graph model projection
     splice/      graph edit -> text range replacement
     eval/        dirty marking, cache, worker RPC
+    persist/     share-link encoding (IndexedDB itself lives in ui/persist.ts)
   ui/            React components, dumb where possible
   worker/        jq wasm host
 ```
@@ -134,9 +135,10 @@ correctness-critical decision lives, so it is the part that gets tests.
 
 ## Status
 
-**Phases 1–7 done.** Paste JSON, edit jq in CodeMirror, on the React Flow canvas
+**Phases 1–8 done.** Paste JSON, edit jq in CodeMirror, on the React Flow canvas
 or as fields in the Stage pane, and see a preview on every node; the Output pane
 shows the selected node's. Object and array constructions fan out into lanes.
+The document survives a reload, and Share copies a link to it.
 Previews run stage by stage on a sample of the input; "Run full" runs the whole
 program on the whole input.
 
@@ -217,6 +219,24 @@ program on the whole input.
   pick a kind and fill its fields, and it shows the jq it will write
   (`stageText`, the only generated text) before Add. The new stage is then
   selected and focused; Escape or Cancel writes nothing.
+- **Persistence (Phase 8).** `src/ui/persist.ts` keeps the jq and the input in
+  IndexedDB (database `millrace`, store `document`, keys `source` and `input`,
+  separate so typing jq never rewrites a big input), saved 300 ms after a change
+  and at once when the page is hidden. `src/ui/Boot.tsx` restores before the
+  app renders ("Opening your document…"), so the editor starts from the saved
+  text with no undo step for it and the default `.` is never saved over it.
+  Share (`src/ui/Share.tsx`) copies `#v1=<lz-string>` (`core/persist/share.ts`):
+  the jq, plus the input while the fragment stays under 32,000 characters
+  (input over 10× that isn't even compressed, so a big input can't freeze the
+  page); otherwise the link holds the jq only and says so. If the clipboard is
+  refused, the link is shown to copy by hand. Opening a link at startup wins
+  over the saved document and becomes the working one; the fragment is then
+  cleared, so a reload keeps later edits. A link pasted into a tab already
+  open only fires `hashchange` (`src/ui/useSharedLinks.ts`): its jq goes
+  through the editor as one undoable step (`openSpec`, committed at once like
+  undo); its input replaces the input pane, which has no undo. Unreadable
+  links, storage the browser refuses, and failed saves each post a notice in
+  the header (store `notice`, a live region). Several tabs: last save wins.
 - **Open checks before calling the app done.** The stale-range race (a canvas
   edit within 200 ms of typing in the editor) is guarded and unit-tested
   (`edits.ts` refuses a node whose text changed) but not exercised in a browser:
@@ -257,7 +277,7 @@ program on the whole input.
 - **Known rough edges.** A stage's compile error is jq's message about that
   stage's text alone (its line and column count from the stage, not the editor);
   map them to the stage's `TextRange` before pointing into the editor. The main
-  JS chunk is ~797 KB (242 KB gzipped): CodeMirror, React Flow and
+  JS chunk is ~810 KB (246 KB gzipped): CodeMirror, React Flow and
   web-tree-sitter; code-split it in the Quality-bar work. The canvas fits the
   chain down to 70% zoom, then pans; at narrow widths (under ~1,100 px of canvas)
   five or more nodes render small. The Stage pane's height follows the selected
