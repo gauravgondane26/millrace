@@ -1,3 +1,4 @@
+import { locate, type Located } from '../parse/graph.ts'
 import type { GraphModel, GraphNode } from '../parse/model.ts'
 
 /**
@@ -10,6 +11,12 @@ import type { GraphModel, GraphNode } from '../parse/model.ts'
  * Each takes the text the node is expected to hold and returns null if the
  * node no longer holds it, so an edit is never spliced into a range that has
  * moved since the user saw it.
+ *
+ * A node can sit in the top-level chain or in a lane of a construction. In
+ * an object value, jq reads a value only up to the next `,` or `}`, so text
+ * that isn't a plain term goes in parentheses there (`isTerm` says which; the
+ * default, with no parser to ask, parenthesizes everything, which is always
+ * valid).
  */
 export interface TextChange {
   from: number
@@ -17,20 +24,32 @@ export interface TextChange {
   insert: string
 }
 
-function find(model: GraphModel, id: string, expected: string): [GraphNode, number] | null {
-  const index = model.nodes.findIndex((n) => n.id === id)
-  const node = model.nodes[index]
-  return node && node.text === expected ? [node, index] : null
+/** Whether text can stand as one `|`-joined stage of an object value. */
+export type IsTerm = (text: string) => boolean
+
+function find(model: GraphModel, id: string, expected: string): Located | null {
+  const found = locate(model, id)
+  return found && found.node.text === expected ? found : null
 }
 
 const isEmpty = (node: GraphNode) => node.range.start === node.range.end
 
+/** The text as it can stand in this chain. */
+function fit(at: Located, text: string, isTerm: IsTerm): string {
+  return at.lane?.objectValue && !isTerm(text) ? `(${text})` : text
+}
+
 /** Replace a stage's text. The source node (the input) has none to replace. */
-export function replaceNode(model: GraphModel, id: string, expected: string, text: string): TextChange | null {
+export function replaceNode(
+  model: GraphModel,
+  id: string,
+  expected: string,
+  text: string,
+  isTerm: IsTerm = () => false,
+): TextChange | null {
   const found = find(model, id, expected)
-  if (!found || found[1] === 0) return null
-  const [node] = found
-  return { from: node.range.start, to: node.range.end, insert: text }
+  if (!found || found.node.kind === 'source') return null
+  return { from: found.node.range.start, to: found.node.range.end, insert: fit(found, text, isTerm) }
 }
 
 /**
@@ -46,24 +65,24 @@ export function replaceArg(
   text: string,
 ): TextChange | null {
   const found = find(model, id, expected)
-  if (!found || found[1] === 0) return null
-  const arg = found[0].args[argIndex]
+  if (!found || found.node.kind === 'source') return null
+  const arg = found.node.args[argIndex]
   if (!arg || arg.text !== expectedArg) return null
   return { from: arg.range.start, to: arg.range.end, insert: text }
 }
 
-/** Remove a stage and the `|` joining it to the pipeline. */
+/** Remove a stage and the `|` joining it to its chain. */
 export function deleteNode(model: GraphModel, id: string, expected: string): TextChange | null {
   const found = find(model, id, expected)
-  if (!found || found[1] === 0) return null
-  const [node, index] = found
-  const prev = model.nodes[index - 1]
-  const next = model.nodes[index + 1]
-  if (!prev) return null
-  if (isEmpty(prev)) {
-    // the first stage, with no `.` before it
+  if (!found || found.node.kind === 'source') return null
+  const { node, chain, index } = found
+  const prev = chain[index - 1]
+  const next = chain[index + 1]
+  if (!prev || isEmpty(prev)) {
+    // the first stage (in a lane, or with no `.` before it)
     if (next) return { from: node.range.start, to: next.range.start, insert: '' }
     // the only stage: leave the identity filter rather than an empty program
+    // or a key with no value
     return { from: node.range.start, to: node.range.end, insert: '.' }
   }
   return { from: prev.range.end, to: node.range.end, insert: '' }
@@ -76,20 +95,21 @@ export function insertAfter(
   id: string,
   expected: string,
   text: string,
+  isTerm: IsTerm = () => false,
 ): TextChange | null {
   const found = find(model, id, expected)
   if (!found) return null
-  const [node, index] = found
-  const sep = separator(model, source, index)
-  if (index === 0 && isEmpty(node)) {
-    const first = model.nodes[1]
+  const { node, chain, index } = found
+  const sep = separator(chain, source, index)
+  if (node.kind === 'source' && isEmpty(node)) {
+    const first = chain[1]
     if (first) return { from: first.range.start, to: first.range.start, insert: `${text}${sep}` }
     // no stages yet: the program is empty, or only comments
     return source.trim() === ''
       ? { from: 0, to: source.length, insert: text }
       : { from: source.length, to: source.length, insert: `\n${text}` }
   }
-  return { from: node.range.end, to: node.range.end, insert: `${sep}${text}` }
+  return { from: node.range.end, to: node.range.end, insert: `${sep}${fit(found, text, isTerm)}` }
 }
 
 /**
@@ -97,10 +117,10 @@ export function insertAfter(
  * multi-line pipeline), taken from a neighbouring gap that holds nothing but a
  * pipe and whitespace; " | " if there is none.
  */
-function separator(model: GraphModel, source: string, index: number): string {
+function separator(chain: readonly GraphNode[], source: string, index: number): string {
   for (const k of [index, index - 1]) {
-    const a = model.nodes[k]
-    const b = model.nodes[k + 1]
+    const a = chain[k]
+    const b = chain[k + 1]
     if (!a || !b || isEmpty(a)) continue
     const gap = source.slice(a.range.end, b.range.start)
     if (/^\s*\|\s*$/.test(gap)) return gap

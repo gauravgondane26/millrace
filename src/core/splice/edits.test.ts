@@ -3,7 +3,9 @@ import { EditorState, type Transaction } from '@codemirror/state'
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { beforeAll, describe, expect, it } from 'vitest'
+import { flatten } from '../parse/graph.ts'
 import { loadJqParser, type ParseJq } from '../parse/parser.ts'
+import { termCheck } from '../parse/term.ts'
 import { deleteNode, insertAfter, replaceArg, replaceNode, type TextChange } from './edits.ts'
 import { graphEditSpec } from './transaction.ts'
 
@@ -16,7 +18,7 @@ beforeAll(async () => {
 
 /** The id and text of the node with this text, as the canvas would pass them. */
 function target(source: string, text: string): [string, string] {
-  const node = parse(source).nodes.find((n) => n.text === text)
+  const node = flatten(parse(source)).find((n) => n.text === text)
   if (!node) throw new Error(`no node "${text}" in ${source}`)
   return [node.id, node.text]
 }
@@ -109,6 +111,74 @@ describe('insertAfter', () => {
     const source = '.users | unique'
     const next = apply(source, insertAfter(parse(source), source, ...target(source, '.users'), 'map(.name)'))
     expect(parse(next).nodes.map((n) => n.kind)).toEqual(['source', 'pick', 'map', 'unique'])
+  })
+})
+
+describe("in a construction's lanes", () => {
+  const isTerm = (text: string) => termCheck(parse)(text)
+
+  it.each([
+    ['a lane stage', '{a: .x | map(.y), b: .z}', 'map(.y)', 'sort', '{a: .x | sort, b: .z}'],
+    ['a stage of an array', '[.[] | .a]', '.a', '.b + 1', '[.[] | .b + 1]'],
+    // jq reads an object value only up to `,`: the grammar is stricter still
+    ['an object value with text that is not a term', '{a: .x, b: .z}', '.x', '.x + 1', '{a: (.x + 1), b: .z}'],
+    ['an object value with a call', '{a: .x}', '.x', 'select(.y)', '{a: select(.y)}'],
+  ])('replaces %s', (_, source, text, insert, expected) => {
+    expect(apply(source, replaceNode(parse(source), ...target(source, text), insert, isTerm))).toBe(expected)
+  })
+
+  it('parenthesizes everything in an object value when no parser says what is a term', () => {
+    const source = '{a: .x}'
+    expect(apply(source, replaceNode(parse(source), ...target(source, '.x'), '.y'))).toBe('{a: (.y)}')
+  })
+
+  it.each([
+    ['the first stage of a lane', '{a: .x | .y, b: .z}', '.x', '{a: .y, b: .z}'],
+    ['a later stage of a lane', '{a: .x | .y, b: .z}', '.y', '{a: .x, b: .z}'],
+    ['the only stage of a lane, leaving the identity filter', '{a: .x, b: .z}', '.z', '{a: .x, b: .}'],
+    ['the only stage of an array', '[.[]]', '.[]', '[.]'],
+    ['a whole construction', '.u | {a: .x} | length', '{a: .x}', '.u | length'],
+  ])('removes %s', (_, source, text, expected) => {
+    expect(apply(source, deleteNode(parse(source), ...target(source, text)))).toBe(expected)
+  })
+
+  it.each([
+    ['a lane stage', '{a: .x, b: .z}', '.x', 'select(.y)', '{a: .x | select(.y), b: .z}'],
+    ['a lane stage, in its own style', '{a: .x\n    | .y}', '.y', '.w', '{a: .x\n    | .y\n    | .w}'],
+    ['a lane stage, parenthesizing a non-term', '{a: .x}', '.x', '.y // 0', '{a: .x | (.y // 0)}'],
+    ['a stage of an array', '[.[]]', '.[]', '.a, .b', '[.[] | .a, .b]'],
+    ['a construction, in the chain it sits in', '{a: .x} | .a', '{a: .x}', 'keys', '{a: .x} | keys | .a'],
+  ])('adds a stage after %s', (_, source, text, insert, expected) => {
+    expect(apply(source, insertAfter(parse(source), source, ...target(source, text), insert, isTerm))).toBe(expected)
+  })
+
+  it('edits an argument of a lane stage in place', () => {
+    const source = '{a: map( .x )}'
+    const change = replaceArg(parse(source), ...target(source, 'map( .x )'), 0, '.x', '.y')
+    expect(apply(source, change)).toBe('{a: map( .y )}')
+  })
+
+  it('refuses a lane stage whose text changed', () => {
+    const source = '{a: .x}'
+    expect(replaceNode(parse(source), 'n1.0.0', '.y', '.z', isTerm)).toBeNull()
+  })
+})
+
+describe('termCheck', () => {
+  it.each([
+    ['.a', true],
+    ['.a.b[0]', true],
+    ['select(.x)', true],
+    ['.a | .b', true],
+    ['{b: .c}', true],
+    ['[.[] | .x]', true],
+    ['.a + 1', false],
+    ['.a, .b', false],
+    ['.a as $x | $x', false],
+    ['.a # trailing comment', true],
+    ['', false],
+  ])('%j stands as an object value: %s', (text, expected) => {
+    expect(termCheck(parse)(text)).toBe(expected)
   })
 })
 
