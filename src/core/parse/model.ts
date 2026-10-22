@@ -38,6 +38,10 @@ export interface Span {
 }
 
 export interface GraphNode extends Span {
+  /**
+   * Unique in the model, and positional: `n3` is stage 3 of the top-level
+   * chain, `n3.1.0` the first stage of lane 1 of the construction `n3`.
+   */
   id: string
   kind: NodeKind
   /**
@@ -45,16 +49,48 @@ export interface GraphNode extends Span {
    * filter, ...). Empty for paths, `unique`, `source` and custom nodes.
    */
   args: Span[]
+  /**
+   * Set on an object or array construction (`{name: .n, ages: [.a[]]}`),
+   * which fans out into one lane per value. The node itself is a custom node:
+   * its text is the whole construction, and it outputs the constructed value.
+   */
+  construct?: Construction
 }
 
 /**
- * A linear pipe chain, `nodes[0]` always being the `source` node: the input
- * data. When the program starts with a bare `.`, the source node owns that
- * `.`; otherwise its range is empty, marking where the first stage begins.
- *
- * Object/array construction fans this out into a DAG; that is deferred until
- * the projection grows beyond linear chains (until then it is custom).
+ * The lanes of a construction. Each lane is a pipe chain that runs on the
+ * construction's own input, the output of the stage before it; the
+ * construction then combines what they produce.
+ */
+export interface Construction {
+  shape: 'object' | 'array'
+  lanes: Lane[]
+}
+
+export interface Lane {
+  /** The key as written (`name`, `"a b"`, `(.k)`, `$v`); null in an array. */
+  key: Span | null
+  /**
+   * The value's pipe chain. Empty for a shorthand entry (`{name}`, `{$v}`),
+   * whose value has no text of its own. Ids continue the construction's:
+   * `${construction.id}.${lane}.${stage}`.
+   */
+  nodes: GraphNode[]
+  /**
+   * The value sits in an object, where jq takes a value only up to the next
+   * `,` or `}`: a new stage that isn't a plain term needs parentheses there.
+   */
+  objectValue: boolean
+}
+
+/**
+ * The top-level pipe chain, `nodes[0]` always being the `source` node: the
+ * input data. When the program starts with a bare `.`, the source node owns
+ * that `.`; otherwise its range is empty, marking where the first stage
+ * begins. Constructions fan the chain out into a DAG through their lanes.
  */
 export interface GraphModel {
   nodes: GraphNode[]
+  /** The grammar read the whole program without an error. */
+  clean: boolean
 }

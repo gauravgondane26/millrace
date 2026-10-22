@@ -2,7 +2,8 @@ import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { beforeAll, describe, expect, it } from 'vitest'
 import { splice } from '../splice/splice.ts'
-import type { GraphModel } from './model.ts'
+import { flatten } from './graph.ts'
+import type { GraphModel, GraphNode } from './model.ts'
 import { loadJqParser, type ParseJq } from './parser.ts'
 
 /**
@@ -101,6 +102,103 @@ describe('project: CST to graph model', () => {
   })
 })
 
+describe('project: constructions fan out', () => {
+  const lanes = (node: GraphNode | undefined) =>
+    node?.construct?.lanes.map((l) => ({ key: l.key?.text ?? null, nodes: l.nodes.map((n) => `${n.kind} ${n.text}`) }))
+
+  it('gives an object a lane per entry, each its own pipe chain', () => {
+    const m = parse('.users | {name: .name, n: .a | map(.b) | sort_by(.c)}')
+    expect(kinds(m)).toEqual(['source', 'pick', 'custom'])
+    const object = m.nodes[2]
+    expect(object?.construct?.shape).toBe('object')
+    expect(lanes(object)).toEqual([
+      { key: 'name', nodes: ['pick .name'] },
+      { key: 'n', nodes: ['pick .a', 'map map(.b)', 'sort_by sort_by(.c)'] },
+    ])
+    const n = object?.construct?.lanes[1]?.nodes
+    expect(n?.map((x) => x.id)).toEqual(['n2.1.0', 'n2.1.1', 'n2.1.2'])
+    expect(n?.[1]?.args.map((a) => a.text)).toEqual(['.b'])
+    expect(object?.construct?.lanes.every((l) => l.objectValue)).toBe(true)
+  })
+
+  it('gives an array one lane, its contents', () => {
+    const m = parse('[.[] | select(.a)]')
+    const array = m.nodes[1]
+    expect(array?.construct?.shape).toBe('array')
+    expect(lanes(array)).toEqual([{ key: null, nodes: ['custom .[]', 'select select(.a)'] }])
+    expect(array?.construct?.lanes[0]?.objectValue).toBe(false)
+  })
+
+  it('nests constructions, with ids that say where each node sits', () => {
+    const m = parse('{a: [.b[] | {c: .d}]}')
+    const inner = m.nodes[1]?.construct?.lanes[0]?.nodes[0]
+    expect(inner?.construct?.shape).toBe('array')
+    const leaf = inner?.construct?.lanes[0]?.nodes[1]
+    expect(leaf?.id).toBe('n1.0.0.0.1')
+    expect(lanes(leaf)).toEqual([{ key: 'c', nodes: ['pick .d'] }])
+  })
+
+  it('keeps keys as written: strings, keywords, computed keys and shorthands', () => {
+    const m = parse('{"a b": .x, if: 1, (.k): .v, name, $v, "c"}')
+    expect(lanes(m.nodes[1])).toEqual([
+      { key: '"a b"', nodes: ['pick .x'] },
+      { key: 'if', nodes: ['custom 1'] },
+      { key: '(.k)', nodes: ['pick .v'] },
+      // a shorthand's value has no text of its own: no stages to draw
+      { key: 'name', nodes: [] },
+      { key: '$v', nodes: [] },
+      { key: '"c"', nodes: [] },
+    ])
+  })
+
+  it('accepts a trailing comma and keeps comments out of ranges', () => {
+    const m = parse('{a: .b # note\n , d: .e,}')
+    expect(lanes(m.nodes[1])).toEqual([
+      { key: 'a', nodes: ['pick .b'] },
+      { key: 'd', nodes: ['pick .e'] },
+    ])
+  })
+
+  it('makes a value the grammar cannot read one custom stage, keeping the other lanes', () => {
+    // valid jq 1.8 that tree-sitter-jq rejects inside an object
+    const m = parse('{a: .b, total: .x + .y, c: try .d catch 0}')
+    expect(m.clean).toBe(false)
+    expect(lanes(m.nodes[1])).toEqual([
+      { key: 'a', nodes: ['pick .b'] },
+      { key: 'total', nodes: ['custom .x + .y'] },
+      { key: 'c', nodes: ['custom try .d catch 0'] },
+    ])
+  })
+
+  it.each([
+    ['an error between entries', '{a: if .x then 1 else 2 end, b: .c}'],
+    ['an @format key', '{@base64: 2}'],
+    ['an empty object', '{}'],
+    ['an empty array', '[]'],
+    ['a half-typed object', '{a: .b'],
+  ])('leaves the whole construction custom for %s', (_, source) => {
+    const m = parse(source)
+    expect(kinds(m)).toEqual(['source', 'custom'])
+    expect(m.nodes[1]?.construct).toBeUndefined()
+  })
+
+  it("degrades only the stage of an array's contents the grammar cannot parse", () => {
+    const m = parse('[.[] | @csv | length]')
+    expect(lanes(m.nodes[1])).toEqual([{ key: null, nodes: ['custom .[]', 'custom @csv', 'custom length'] }])
+  })
+
+  it('does not fan out a construction inside a call argument', () => {
+    const m = parse('map({name})')
+    expect(kinds(m)).toEqual(['source', 'map'])
+    expect(m.nodes[1]?.construct).toBeUndefined()
+  })
+
+  it('marks the model clean only when the grammar read all of it', () => {
+    expect(parse('{a: .b}').clean).toBe(true)
+    expect(parse('.[] | @csv').clean).toBe(false)
+  })
+})
+
 describe('round trip (invariant 2)', () => {
   const corpus = [
     '.users | map(.name) | sort_by(.age)',
@@ -110,12 +208,14 @@ describe('round trip (invariant 2)', () => {
     'reduce .[] as $x (0; . + $x)',
     '.[] | @csv | length',
     '.users | map(.name',
+    '{name: .name, ages: [.users[].age]}',
+    '.users | {n: .a | map(.b) # why\n  | sort_by(.c), "k": [.[] | select(.x)], $v, total: .x + .y,}',
     '',
   ]
 
   it.each(corpus)('re-splicing every node with its own text is identity: %j', (source) => {
     const m = parse(source)
-    for (const node of m.nodes) {
+    for (const node of flatten(m)) {
       expect(source.slice(node.range.start, node.range.end)).toBe(node.text)
       expect(splice(source, node.range, node.text)).toBe(source)
     }

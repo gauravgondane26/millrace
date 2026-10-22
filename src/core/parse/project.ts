@@ -1,5 +1,5 @@
 import type { Node, Tree } from 'web-tree-sitter'
-import type { GraphModel, GraphNode, NodeKind, Span, TextRange } from './model.ts'
+import type { Construction, GraphModel, GraphNode, NodeKind, Span, TextRange } from './model.ts'
 
 /**
  * Projects a parsed jq tree (tree-sitter-jq grammar) into the graph model.
@@ -11,6 +11,14 @@ import type { GraphModel, GraphNode, NodeKind, Span, TextRange } from './model.t
  *   grammar can't parse, is a `custom` node holding its raw text. Valid jq is
  *   never rejected (invariant 5): jq still runs the text, the graph just
  *   can't draw that part structurally.
+ * - An object or array construction stage is a custom node that fans out
+ *   (`construct`): each object value, or an array's contents, is a lane with
+ *   its own pipe chain, projected by the same rules, constructions included.
+ *   The grammar lays an object value's pipes out flat (`.a | map(.b)` is
+ *   index, "|", function), and it is stricter than jq 1.8 there: jq takes
+ *   `{n: .a + 1}`, the grammar flags it. Its error recovery stays inside the
+ *   key/value pair, so such a value is one custom stage in its lane; an error
+ *   anywhere else in the construction leaves the whole of it custom.
  * - Comments between stages fall outside every node's range, so splicing a
  *   node never touches them (invariant 2).
  */
@@ -27,24 +35,18 @@ export function project(tree: Tree, source: string): GraphModel {
 
   // A leading bare `.` is the input itself: give it to the source node.
   const first = stages[0]
-  const ownsIdentity = first?.node !== undefined && !first.custom && isIdentity(first.node)
+  const ownsIdentity = first !== undefined && !first.custom && source.slice(first.range.start, first.range.end) === '.'
   const sourceRange: TextRange = ownsIdentity
     ? first.range
     : { start: first?.range.start ?? 0, end: first?.range.start ?? 0 }
 
-  const nodes: GraphNode[] = [
-    { id: 'n0', kind: 'source', ...span(source, sourceRange), args: [] },
-  ]
-  for (const stage of ownsIdentity ? stages.slice(1) : stages) {
-    const shape = stage.custom || !stage.node ? CUSTOM : classify(stage.node)
-    nodes.push({
-      id: `n${nodes.length}`,
-      kind: shape.kind,
-      ...span(source, stage.range),
-      args: shape.args.map((arg) => span(source, range(arg))),
-    })
+  return {
+    nodes: [
+      { id: 'n0', kind: 'source', ...span(source, sourceRange), args: [] },
+      ...chain(source, ownsIdentity ? stages.slice(1) : stages, 'n', 1),
+    ],
+    clean: !root.hasError,
   }
-  return { nodes }
 }
 
 /** Structural calls and the number of `;`-separated arguments they take. */
@@ -58,22 +60,62 @@ const CALLS = new Map<string, { kind: NodeKind; arity: number }>([
   ['limit', { kind: 'limit', arity: 2 }],
 ])
 
+/** A child of a CST node, with the grammar field it sits under. */
+interface Part {
+  node: Node
+  field: string | null
+}
+
+/**
+ * A stretch of source that becomes one node. `parts` are the children that
+ * make it up (a query's, or a run of an object value's); unset for parse
+ * errors, which carry no structure. `custom` forces the opaque fallback.
+ */
+interface Segment {
+  range: TextRange
+  parts?: Part[]
+  custom: boolean
+  error: boolean
+}
+
 interface Shape {
   kind: NodeKind
   args: Node[]
+  construct?: { shape: Construction['shape']; lanes: LaneShape[] }
+}
+
+interface LaneShape {
+  key: TextRange | null
+  stages: Segment[]
+  objectValue: boolean
 }
 
 const CUSTOM: Shape = { kind: 'custom', args: [] }
 
-/**
- * A stretch of source that becomes one node. `node` is unset for parse
- * errors, which carry no structure; `custom` forces the opaque fallback.
- */
-interface Segment {
-  range: TextRange
-  node?: Node
-  custom: boolean
-  error: boolean
+/** Nodes for a pipe chain, numbered from `first` under `prefix`. */
+function chain(source: string, stages: Segment[], prefix: string, first: number): GraphNode[] {
+  return stages.map((stage, i) => toNode(source, stage, `${prefix}${first + i}`))
+}
+
+function toNode(source: string, stage: Segment, id: string): GraphNode {
+  const shape = stage.custom || !stage.parts ? CUSTOM : classify(stage.parts)
+  const node: GraphNode = {
+    id,
+    kind: shape.kind,
+    ...span(source, stage.range),
+    args: shape.args.map((arg) => span(source, range(arg))),
+  }
+  if (shape.construct) {
+    node.construct = {
+      shape: shape.construct.shape,
+      lanes: shape.construct.lanes.map((lane, l) => ({
+        key: lane.key && span(source, lane.key),
+        nodes: chain(source, lane.stages, `${id}.${l}.`, 0),
+        objectValue: lane.objectValue,
+      })),
+    }
+  }
+  return node
 }
 
 function bodySegments(body: Node): Segment[] {
@@ -97,7 +139,7 @@ function pipeStages(query: Node): Segment[] {
       stages.push(errorSegment(child))
     }
   }
-  if (!chained) return [{ range: range(query), node: query, custom: query.hasError, error: false }]
+  if (!chained) return [{ range: range(query), parts: partsOf(query), custom: false, error: false }]
   return stages
 }
 
@@ -135,8 +177,15 @@ function mergeErrors(segments: Segment[]): Segment[] {
   return out
 }
 
-function classify(query: Node): Shape {
-  const named = query.namedChildren.filter((c) => c.type !== 'comment')
+function classify(parts: Part[]): Shape {
+  const field = parts[0]?.field
+  if ((field === 'object' || field === 'object_2' || field === 'array') && parts.every((p) => p.field === field)) {
+    return construction(parts, field === 'array' ? 'array' : 'object') ?? CUSTOM
+  }
+
+  if (parts.some((p) => broken(p.node))) return CUSTOM
+
+  const named = parts.flatMap((p) => (p.node.isNamed ? [p.node] : []))
   const [head, rest] = named
 
   if (head?.type === 'funcname' && named.length <= 2 && (!rest || rest.type === 'args')) {
@@ -152,6 +201,85 @@ function classify(query: Node): Shape {
   return CUSTOM
 }
 
+/**
+ * `[...]` is one lane, its contents' pipe chain; `{...}` is a lane per entry.
+ * Null when the grammar couldn't make out the entries, so the whole
+ * construction stays custom.
+ */
+function construction(parts: Part[], shape: Construction['shape']): Shape | null {
+  // the brackets, and a trailing comma, must be there as written
+  if (parts.some((p, i) => i !== 1 && broken(p.node))) return null
+  const inner = parts[1]?.node
+  if (shape === 'array') {
+    if (inner?.type !== 'query') return null
+    return { ...CUSTOM, construct: { shape, lanes: [{ key: null, stages: mergeErrors(pipeStages(inner)), objectValue: false }] } }
+  }
+  const lanes = inner?.type === 'objectkeyvals' ? entries(inner) : null
+  return lanes && { ...CUSTOM, construct: { shape, lanes } }
+}
+
+/** The grammar nests entries to the left: (objectkeyvals (objectkeyvals a) , b). */
+function entries(keyvals: Node): LaneShape[] | null {
+  const lanes: LaneShape[] = []
+  for (const { node } of partsOf(keyvals)) {
+    if (node.type === 'objectkeyvals') {
+      const more = entries(node)
+      if (!more) return null
+      lanes.push(...more)
+    } else if (node.type === 'objectkeyval') {
+      const lane = entry(node)
+      if (!lane) return null
+      lanes.push(lane)
+    } else if (node.type !== ',') {
+      return null // an error between entries
+    }
+  }
+  return lanes
+}
+
+function entry(keyval: Node): LaneShape | null {
+  const parts = partsOf(keyval)
+  const colon = parts.findIndex((p) => p.node.type === ':')
+  // shorthand: `name`, `$v`, `"a b"`, `@base64`
+  if (colon === -1) return broken(keyval) ? null : { key: range(keyval), stages: [], objectValue: true }
+
+  const key = parts.slice(0, colon)
+  const value = parts.slice(colon + 1)
+  const [firstKey, firstValue] = [key[0], value[0]]
+  const [lastKey, lastValue] = [key.at(-1), value.at(-1)]
+  if (!firstKey || !lastKey || !firstValue || !lastValue) return null
+  if (key.some((p) => broken(p.node))) return null
+  const keyRange = { start: firstKey.node.startIndex, end: lastKey.node.endIndex }
+
+  if (broken(keyval)) {
+    // valid jq the grammar can't read here (`.a + 1`): one custom stage
+    const valueRange = { start: firstValue.node.startIndex, end: lastValue.node.endIndex }
+    return { key: keyRange, stages: [{ range: valueRange, custom: true, error: false }], objectValue: true }
+  }
+  if (value.length !== 1 || firstValue.node.type !== 'objectval') return null
+  return { key: keyRange, stages: valueStages(firstValue.node), objectValue: true }
+}
+
+/** An object value's children, split at its top-level `|`s. */
+function valueStages(objectval: Node): Segment[] {
+  const stages: Segment[] = []
+  let run: Part[] = []
+  const flush = () => {
+    const [first, last] = [run[0], run.at(-1)]
+    if (first && last) {
+      const r = { start: first.node.startIndex, end: last.node.endIndex }
+      stages.push({ range: r, parts: run, custom: false, error: false })
+    }
+    run = []
+  }
+  for (const part of partsOf(objectval)) {
+    if (!part.node.isNamed && part.node.type === '|') flush()
+    else run.push(part)
+  }
+  flush()
+  return stages
+}
+
 /** `limit(3; .[])` parses as (args (args 3) .[]): flatten to [3, .[]]. */
 function callArgs(args: Node): Node[] {
   return args.namedChildren.flatMap((c) =>
@@ -159,8 +287,14 @@ function callArgs(args: Node): Node[] {
   )
 }
 
-function isIdentity(query: Node): boolean {
-  return query.namedChildCount === 0 && query.text === '.'
+/** A node's children with their fields, comments left out. */
+function partsOf(node: Node): Part[] {
+  const parts: Part[] = []
+  for (let i = 0; i < node.childCount; i++) {
+    const child = node.child(i)
+    if (child && child.type !== 'comment') parts.push({ node: child, field: node.fieldNameForChild(i) })
+  }
+  return parts
 }
 
 function range(node: Node): TextRange {
@@ -170,3 +304,6 @@ function range(node: Node): TextRange {
 function span(source: string, r: TextRange): Span {
   return { text: source.slice(r.start, r.end), range: r }
 }
+
+/** The grammar flagged this node, or something in it, or made it up. */
+const broken = (node: Node) => node.hasError || node.isMissing
