@@ -1,6 +1,7 @@
 import * as Comlink from 'comlink'
 import type { JqApi, RunOutput } from './engine.ts'
 import type { RunFilter } from '../core/eval/cache.ts'
+import { SAMPLE_ITEMS, type Sample } from '../core/eval/sample.ts'
 
 export type { RunOutput }
 
@@ -28,6 +29,9 @@ export class EngineError extends Error {
 /** Longest one call may take before the worker is presumed stuck. */
 const TIMEOUT_MS = 10_000
 
+/** How long an abandoned call may keep its worker busy before the worker goes. */
+const ABANDON_GRACE_MS = 300
+
 /** The names engine.ts gives its errors. */
 const KINDS: Partial<Record<string, EngineErrorKind>> = {
   JqInputError: 'input',
@@ -38,15 +42,29 @@ const KINDS: Partial<Record<string, EngineErrorKind>> = {
 interface Engine {
   worker: Worker
   api: Comlink.Remote<JqApi>
-  /** Rejecters of calls still in flight, run if the worker is killed. */
-  pending: Set<(error: EngineError) => void>
+  /** Calls sent to this worker that haven't settled. */
+  pending: Set<Call>
+}
+
+interface Call {
+  run: (api: Comlink.Remote<JqApi>) => Promise<unknown>
+  resolve: (value: unknown) => void
+  reject: (error: unknown) => void
+  /** The caller stopped waiting (aborted); whatever comes back is dropped. */
+  abandoned: boolean
+  engine: Engine | undefined
+  timer: ReturnType<typeof setTimeout> | undefined
+  detach: () => void
 }
 
 /**
  * Main-thread handle to the jq worker, spawned lazily so the WASM module is
- * only instantiated when the first preview runs. A worker that crashes or
- * runs too long (an infinite filter blocks it for good) is killed and the
- * next call gets a fresh one.
+ * only instantiated when the first preview runs.
+ *
+ * jq can't be interrupted mid-run, so a worker whose call crashes, times out
+ * (an infinite filter blocks it for good) or is abandoned while still busy is
+ * terminated. Only that call fails: the others it was holding are bystanders
+ * and are re-sent to a fresh worker, so they never inherit its error.
  */
 let engine: Engine | null = null
 
@@ -58,44 +76,83 @@ function getEngine(): Engine {
   return engine
 }
 
-function restart(target: Engine, error: EngineError): void {
-  target.worker.terminate()
-  for (const reject of target.pending) reject(error)
-  target.pending.clear()
-  if (engine === target) engine = null
+const isCurrent = (call: Call, target: Engine) => call.engine === target && target.pending.has(call)
+
+function finish(call: Call): void {
+  clearTimeout(call.timer)
+  call.engine?.pending.delete(call)
+  call.detach()
 }
 
-function call<T>(fn: (api: Comlink.Remote<JqApi>) => Promise<T>): Promise<T> {
+function dispatch(call: Call): void {
   const target = getEngine()
-  return new Promise<T>((resolve, reject) => {
-    const fail = (error: EngineError) => {
-      clearTimeout(timer)
-      target.pending.delete(fail)
-      reject(error)
-    }
-    const timer = setTimeout(() => {
-      const seconds = TIMEOUT_MS / 1000
-      restart(target, new EngineError('timeout', `Stopped after ${seconds} s: the filter may never finish.`))
-    }, TIMEOUT_MS)
-    target.pending.add(fail)
+  call.engine = target
+  target.pending.add(call)
+  call.timer = setTimeout(() => {
+    const seconds = TIMEOUT_MS / 1000
+    restart(target, call, new EngineError('timeout', `Stopped after ${seconds} s: the filter may never finish.`))
+  }, TIMEOUT_MS)
 
-    fn(target.api).then(
-      (value) => {
-        clearTimeout(timer)
-        target.pending.delete(fail)
-        resolve(value)
-      },
-      (e: unknown) => {
-        const name = e instanceof Error ? e.name : ''
-        const message = e instanceof Error ? e.message : String(e)
-        const kind = KINDS[name]
-        if (kind) return fail(new EngineError(kind, message))
-        // Anything else is the wasm trapping or overflowing its stack; its
-        // state can no longer be trusted, so start over.
-        fail(new EngineError('crash', `The jq engine crashed and was restarted: ${message}`))
-        restart(target, new EngineError('crash', 'The jq engine crashed and was restarted.'))
-      },
-    )
+  call.run(target.api).then(
+    (value) => {
+      if (!isCurrent(call, target)) return
+      finish(call)
+      if (!call.abandoned) call.resolve(value)
+    },
+    (e: unknown) => {
+      if (!isCurrent(call, target)) return
+      const name = e instanceof Error ? e.name : ''
+      const message = e instanceof Error ? e.message : String(e)
+      const kind = KINDS[name]
+      if (kind) {
+        finish(call)
+        if (!call.abandoned) call.reject(new EngineError(kind, message))
+        return
+      }
+      // Anything else is the wasm trapping or overflowing its stack; its
+      // state can no longer be trusted, so start over.
+      restart(target, call, new EngineError('crash', `The jq engine crashed and was restarted: ${message}`))
+    },
+  )
+}
+
+function restart(target: Engine, culprit: Call, error: EngineError): void {
+  target.worker.terminate()
+  if (engine === target) engine = null
+  const bystanders = [...target.pending].filter((c) => c !== culprit)
+  for (const c of target.pending) clearTimeout(c.timer)
+  target.pending.clear()
+
+  culprit.detach()
+  if (!culprit.abandoned) culprit.reject(error)
+  for (const c of bystanders) {
+    if (c.abandoned) c.detach()
+    else dispatch(c)
+  }
+}
+
+function call<T>(run: (api: Comlink.Remote<JqApi>) => Promise<T>, signal?: AbortSignal): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    if (signal?.aborted) return reject(signal.reason)
+    const onAbort = () => {
+      c.abandoned = true
+      reject(signal?.reason)
+      const target = c.engine
+      setTimeout(() => {
+        if (target && isCurrent(c, target)) restart(target, c, new EngineError('timeout', 'Abandoned.'))
+      }, ABANDON_GRACE_MS)
+    }
+    const c: Call = {
+      run,
+      resolve: resolve as (value: unknown) => void,
+      reject,
+      abandoned: false,
+      engine: undefined,
+      timer: undefined,
+      detach: () => signal?.removeEventListener('abort', onAbort),
+    }
+    signal?.addEventListener('abort', onAbort, { once: true })
+    dispatch(c)
   })
 }
 
@@ -104,12 +161,17 @@ export const runInWorker = (
   filter: string,
   input: string,
   maxOutput = PREVIEW_OUTPUT_LIMIT,
-): Promise<RunOutput> => call((api) => api.run(filter, input, maxOutput))
+  signal?: AbortSignal,
+): Promise<RunOutput> => call((api) => api.run(filter, input, maxOutput), signal)
 
 /** A {@link RunFilter} backed by the workered jq instance. */
-export const runFilterInWorker: RunFilter = (filter, input) =>
-  runInWorker(filter, input).then((out) => out.text)
+export const runFilterInWorker: RunFilter = (filter, input, signal) =>
+  runInWorker(filter, input, PREVIEW_OUTPUT_LIMIT, signal)
 
 /** Pretty-print JSON text in the worker, for display. */
-export const formatInWorker = (text: string, indent = 2): Promise<string> =>
-  call((api) => api.format(text, indent))
+export const formatInWorker = (text: string, indent = 2, signal?: AbortSignal): Promise<string> =>
+  call((api) => api.format(text, indent), signal)
+
+/** Cut input text to a preview sample in the worker (core/eval/sample). */
+export const sampleInWorker = (text: string, limit = SAMPLE_ITEMS, signal?: AbortSignal): Promise<Sample> =>
+  call((api) => api.sample(text, limit), signal)

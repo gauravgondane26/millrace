@@ -1,4 +1,5 @@
 import type { Jq } from 'jq-wasm'
+import { sampleJson, type Sample } from '../core/eval/sample.ts'
 
 /**
  * The jq engine: jq 1.8.2 itself, compiled to WASM (the jq-wasm package), so
@@ -28,6 +29,11 @@ export interface JqApi {
   run(filter: string, input: string, maxOutput: number): Promise<RunOutput>
   /** Pretty-print JSON text for display, as jq prints it. */
   format(text: string, indent: number): Promise<string>
+  /**
+   * Cut input text to a preview sample (core/eval/sample). Runs here, off the
+   * main thread, because it scans the whole input.
+   */
+  sample(text: string, limit: number): Promise<Sample>
 }
 
 export function createEngine(load: () => Promise<Jq>): JqApi {
@@ -41,6 +47,9 @@ export function createEngine(load: () => Promise<Jq>): JqApi {
       // jq-wasm trims the final newline; every value ends with one here.
       const text = result.stdout === '' ? '' : `${result.stdout}\n`
       return truncate(text, maxOutput)
+    },
+    async sample(text, limit) {
+      return sampleJson(text, limit)
     },
     async format(text, indent) {
       const result = (await engine()).raw(text, '.', ['--indent', String(indent)])

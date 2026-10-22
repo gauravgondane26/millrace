@@ -17,17 +17,39 @@ export interface PipelineNode {
   filter: string
 }
 
+/** What one filter produced. */
+export interface StageOutput {
+  /** JSON text, one compact value per line (see worker/engine.ts). */
+  text: string
+  /** The engine kept only part of the output. */
+  truncated: boolean
+}
+
 /**
  * Runs one filter over an input stream. The real impl is the workered jq RPC.
- * Streams are JSON text, one compact value per line (see worker/engine.ts), so a
- * node's output is the next node's input as is.
+ * A node's output text is the next node's input as is. Aborting `signal`
+ * abandons the call.
  */
-export type RunFilter = (filter: string, input: string) => Promise<string>
+export type RunFilter = (filter: string, input: string, signal?: AbortSignal) => Promise<StageOutput>
+
+/** One node's preview: its output, its own error, or blocked by an earlier one. */
+export type NodeResult =
+  | {
+      status: 'ok'
+      output: StageOutput
+      /** Computed from input that was cut upstream, so it may be incomplete. */
+      partial: boolean
+    }
+  | { status: 'error'; error: unknown }
+  | { status: 'blocked' }
+
+/** A computed result; blocked nodes are never computed, so never cached. */
+type Computed = Exclude<NodeResult, { status: 'blocked' }>
 
 interface CacheEntry {
   filterHash: number
   inputHash: number
-  output: string
+  result: Computed
 }
 
 export type PipelineCache = Map<string, CacheEntry>
@@ -46,45 +68,68 @@ function hashString(s: string): number {
   return h >>> 0
 }
 
-
 export interface RunResult {
-  /** Preview output for each node, in order. */
-  outputs: string[]
+  /** One result per node, in order. */
+  results: NodeResult[]
   /** Ids of nodes that were actually recomputed this run (cache misses). */
   ran: string[]
 }
 
 /**
- * Evaluate the pipeline, reusing cached node outputs where neither the node's
+ * Evaluate the pipeline, reusing cached node results where neither the node's
  * filter nor its input changed. Mutates `cache` in place with fresh entries.
+ *
+ * A failing node keeps its error and blocks everything after it. Errors are
+ * cached like outputs, so a stage that times out isn't re-run on every edit
+ * elsewhere. If `signal` aborts, this rejects with the abort reason and
+ * caches nothing from the abandoned call.
  */
 export async function runPipeline(
   nodes: readonly PipelineNode[],
   input: string,
   runFilter: RunFilter,
   cache: PipelineCache,
+  signal?: AbortSignal,
 ): Promise<RunResult> {
-  const outputs: string[] = []
+  const results: NodeResult[] = []
   const ran: string[] = []
-  let current = input
+  let current: string | null = input
+  let partial = false
 
   for (const node of nodes) {
+    if (current === null) {
+      results.push({ status: 'blocked' })
+      continue
+    }
+    signal?.throwIfAborted()
+
     const filterHash = hashString(node.filter)
     const inputHash = hashString(current)
     const prev = cache.get(node.id)
 
-    let output: string
+    let result: Computed
     if (prev && prev.filterHash === filterHash && prev.inputHash === inputHash) {
-      output = prev.output
+      result = prev.result
     } else {
-      output = await runFilter(node.filter, current)
-      cache.set(node.id, { filterHash, inputHash, output })
+      try {
+        result = { status: 'ok', output: await runFilter(node.filter, current, signal), partial: false }
+      } catch (error) {
+        signal?.throwIfAborted()
+        result = { status: 'error', error }
+      }
+      cache.set(node.id, { filterHash, inputHash, result })
       ran.push(node.id)
     }
 
-    outputs.push(output)
-    current = output
+    if (result.status === 'ok') {
+      results.push({ ...result, partial })
+      partial ||= result.output.truncated
+      current = result.output.text
+    } else {
+      results.push(result)
+      current = null
+    }
   }
 
-  return { outputs, ran }
+  return { results, ran }
 }

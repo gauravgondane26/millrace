@@ -1,7 +1,7 @@
 import * as Comlink from 'comlink'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { EngineError } from './client.ts'
-import type { JqApi } from './engine.ts'
+import type { JqApi, RunOutput } from './engine.ts'
 
 /**
  * The client's restart logic, against a fake Worker: a MessageChannel whose far
@@ -20,6 +20,7 @@ class FakeWorker {
       {
         run: (f: string, i: string, max: number) => behavior.run(f, i, max),
         format: (t: string, n: number) => behavior.format(t, n),
+        sample: (t: string, n: number) => behavior.sample(t, n),
       },
       port2,
     )
@@ -43,6 +44,8 @@ class FakeWorker {
 }
 
 const named = (name: string, message: string) => Object.assign(new Error(message), { name })
+const ok = (text: string): RunOutput => ({ text, truncated: false })
+const never = () => new Promise<RunOutput>(() => {}) // e.g. until(false; .), which outputs nothing
 
 async function loadClient() {
   vi.resetModules() // a fresh client, and so a fresh worker, per test
@@ -60,7 +63,11 @@ async function rejection(promise: Promise<unknown>): Promise<EngineError> {
 
 beforeEach(() => {
   vi.stubGlobal('Worker', FakeWorker)
-  behavior = { run: async (f, i) => ({ text: `${i} | ${f}`, truncated: false }), format: async (t) => t }
+  behavior = {
+    run: async (f, i) => ok(`${i} | ${f}`),
+    format: async (t) => t,
+    sample: async (t) => ({ text: t, sampled: false }),
+  }
 })
 
 afterEach(() => {
@@ -72,7 +79,7 @@ afterEach(() => {
 describe('worker client', () => {
   it('passes results through', async () => {
     const { runFilterInWorker } = await loadClient()
-    expect(await runFilterInWorker('.a', '1')).toBe('1 | .a')
+    expect(await runFilterInWorker('.a', '1')).toEqual(ok('1 | .a'))
   })
 
   it('maps the engine error names to kinds, keeping the worker', async () => {
@@ -83,7 +90,7 @@ describe('worker client', () => {
     const e = await rejection(runFilterInWorker('nope', '1'))
     expect([e.kind, e.message]).toEqual(['compile', 'undefined filter'])
 
-    behavior.run = async () => ({ text: 'ok', truncated: false })
+    behavior.run = async () => ok('ok')
     await runFilterInWorker('.', '1')
     expect(workers).toHaveLength(1)
   })
@@ -96,26 +103,66 @@ describe('worker client', () => {
     expect((await rejection(runFilterInWorker('.', '1'))).kind).toBe('crash')
     expect(workers[0]?.terminated).toBe(true)
 
-    behavior.run = async () => ({ text: 'ok', truncated: false })
-    expect(await runFilterInWorker('.', '1')).toBe('ok')
+    behavior.run = async () => ok('ok')
+    expect(await runFilterInWorker('.', '1')).toEqual(ok('ok'))
     expect(workers).toHaveLength(2)
   })
 
-  it('stops a filter that never finishes, failing every call queued on it', async () => {
+  it('times out a filter that never finishes; calls queued behind it go to a fresh worker', async () => {
     vi.useFakeTimers()
     const { runFilterInWorker } = await loadClient()
-    behavior.run = () => new Promise(() => {}) // e.g. until(false; .), which outputs nothing
+    // the first worker never answers, as one stuck in `until(false; .)` wouldn't
+    behavior.run = (f, i) => (workers.length === 1 ? never() : Promise.resolve(ok(`${i} | ${f}`)))
 
-    const first = rejection(runFilterInWorker('until(false; .)', '1'))
-    const queued = rejection(runFilterInWorker('.', '1'))
+    const stuck = rejection(runFilterInWorker('stuck', '1'))
+    const queued = runFilterInWorker('.a', '1')
     await vi.advanceTimersByTimeAsync(10_000)
 
-    expect((await first).kind).toBe('timeout')
-    expect((await queued).kind).toBe('timeout')
+    expect((await stuck).kind).toBe('timeout')
+    expect(await queued).toEqual(ok('1 | .a')) // a bystander never inherits another call's error
     expect(workers[0]?.terminated).toBe(true)
-
-    behavior.run = async () => ({ text: 'ok', truncated: false })
-    expect(await runFilterInWorker('.', '1')).toBe('ok')
     expect(workers).toHaveLength(2)
+  })
+})
+
+describe('abandoning a call', () => {
+  it('rejects at once, and a call that finishes quickly keeps its worker', async () => {
+    const { runFilterInWorker } = await loadClient()
+    let release: ((out: RunOutput) => void) | undefined
+    behavior.run = () => new Promise((resolve) => (release = resolve))
+
+    const controller = new AbortController()
+    const call = runFilterInWorker('.', '1', controller.signal)
+    await vi.waitFor(() => expect(release).toBeDefined()) // the worker has the call
+    controller.abort(new Error('superseded'))
+    await expect(call).rejects.toThrow('superseded')
+
+    release?.(ok('late'))
+    behavior.run = async () => ok('next')
+    expect(await runFilterInWorker('.', '1')).toEqual(ok('next'))
+    expect(workers).toHaveLength(1)
+  })
+
+  it('drops the worker of a call still busy after the grace period, re-sending the others', async () => {
+    vi.useFakeTimers()
+    const { runFilterInWorker } = await loadClient()
+    behavior.run = (f, i) => (workers.length === 1 ? never() : Promise.resolve(ok(`${i} | ${f}`)))
+
+    const controller = new AbortController()
+    const abandoned = runFilterInWorker('slow', '1', controller.signal).catch((e: Error) => e.message)
+    const bystander = runFilterInWorker('.b', '1')
+    controller.abort(new Error('superseded'))
+    await vi.advanceTimersByTimeAsync(300)
+
+    expect(await abandoned).toBe('superseded')
+    expect(workers[0]?.terminated).toBe(true)
+    expect(await bystander).toEqual(ok('1 | .b'))
+  })
+
+  it('rejects straight away when the signal is already aborted', async () => {
+    const { sampleInWorker } = await loadClient()
+    const controller = new AbortController()
+    controller.abort(new Error('gone'))
+    await expect(sampleInWorker('[1]', 200, controller.signal)).rejects.toThrow('gone')
   })
 })
