@@ -53,7 +53,8 @@ export type NodeResult =
       /** Computed from input that was cut upstream, so it may be incomplete. */
       partial: boolean
     }
-  | { status: 'error'; error: unknown }
+  /** `filter` is the text that failed, which locates a compile error in it. */
+  | { status: 'error'; error: unknown; filter: string }
   /** `by` is the id of the node whose error stopped this one. */
   | { status: 'blocked'; by: string }
 
@@ -144,7 +145,7 @@ export async function runPipeline(
           result = { status: 'ok', output: await runFilter(node.filter, flow.text, signal), partial: false }
         } catch (error) {
           signal?.throwIfAborted()
-          result = { status: 'error', error }
+          result = { status: 'error', error, filter: node.filter }
         }
         cache.set(node.id, { filterHash, inputHash, result })
         ran.push(node.id)

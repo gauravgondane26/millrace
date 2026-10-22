@@ -68,6 +68,11 @@ describe('runPipeline — failures', () => {
     expect(result.ran).toEqual(['n1', 'n2', 'n3'])
   })
 
+  it('names the filter text that failed', async () => {
+    const result = await runPipeline(sixNodes(), 'in', failingAt('f3'), createCache())
+    expect(result.results.get('n3')).toEqual({ status: 'error', error: new Error('f3 failed'), filter: 'f3' })
+  })
+
   it('caches errors, so editing downstream does not re-run a failing stage', async () => {
     const cache = createCache()
     const run = failingAt('f3')
