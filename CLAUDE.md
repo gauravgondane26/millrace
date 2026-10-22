@@ -127,23 +127,36 @@ correctness-critical decision lives, so it is the part that gets tests.
 - `npm test -- src/core/eval` — run one suite (path filter)
 - `npm test -- -t "cache invalidation"` — run tests matching a name
 
-## Scaffold status
+- `npm run build:wasm` — rebuild the jaq wasm package (needs the Rust toolchain)
 
-The stack and `src/core | ui | worker` layout are in place and the three test
-suites exist (round-trip splice, cache invalidation, projection). Two WASM
-artifacts are **not yet wired** and every seam that needs them throws a loud
-`TODO(wasm)` rather than faking output:
+## Status
 
-- **jq grammar** for web-tree-sitter — `src/core/parse/project.ts`. Build it from
-  a tree-sitter-jq grammar (error recovery + byte ranges both required) into
-  `public/`. Until then the projection suite is `it.todo` and the UI treats the
-  whole source as one custom node.
-- **jaq compiled to WASM** — `src/worker/jq.worker.ts`. Compile jaq to wasm into
-  `public/` and instantiate it in the worker; `run()` applies one filter to one
-  input (invariant 3) off the main thread (invariant 4).
+**Phase 1 done:** paste JSON, type jq, see live worker-computed output. The whole
+source is treated as one opaque filter until parsing lands.
 
-`core/splice` and `core/eval` are fully implemented and tested — they don't
-depend on either artifact.
+- **Execution — wired.** `crates/jq-wasm` wraps jaq (`jaq-core`/`jaq-std`/
+  `jaq-json` 3.x) behind one export, `run(filter, inputs)`. The generated package
+  is committed in `src/worker/jqpkg` so the app builds without Rust; regenerate it
+  with `npm run build:wasm`. `src/worker/jqEngine.test.ts` guards it in Node.
+- **Stream convention.** A node's value is a JSON array of values. `run` applies
+  the filter to each element and concatenates all outputs, so node k's output
+  array is node k+1's input array. The user's pasted document is one value: `[doc]`.
+- **Parsing — not wired.** `src/core/parse/project.ts` throws `TODO(wasm)` until a
+  tree-sitter jq grammar (error recovery + byte ranges) is built. The projection
+  suite stays `it.todo` until then.
+- **Known rough edge.** Engine errors currently surface jaq's raw `Debug` text;
+  readable, node-mapped messages are a Quality-bar item still to do.
+
+`core/splice` and `core/eval` are implemented and tested independently of both.
+
+### Rust toolchain on this machine
+
+GNU host (`stable-x86_64-pc-windows-gnu`) with the `wasm32-unknown-unknown` target
+and a prebuilt `wasm-pack`. Shells started before the install may not have
+`~/.cargo/bin` on PATH, so prepend it. An old 32-bit `C:\MinGW\bin` on PATH breaks
+host builds of crates that need `dlltool` (e.g. `windows-sys`). The jaq wrapper
+doesn't pull any of those in. If a future dependency does, install a 64-bit
+MinGW-w64 rather than building around it.
 
 ## Testing
 
