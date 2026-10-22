@@ -134,10 +134,10 @@ correctness-critical decision lives, so it is the part that gets tests.
 
 ## Status
 
-**Phases 1–3 done.** Paste JSON, edit jq in CodeMirror, see live worker-computed
-output, and see the source projected into pipeline stages (a read-only strip under
-the editor until the React Flow canvas lands in Phase 4). Execution still runs the
-whole source as one filter; per-node previews arrive with the canvas.
+**Phases 1–4 done.** Paste JSON, edit jq in CodeMirror, and see the source
+projected onto a React Flow canvas (read-only until Phase 5) with a preview on
+every node; the Output pane shows the selected node's. Previews run stage by stage
+on a sample of the input; "Run full" runs the whole program on the whole input.
 
 - **Execution.** `src/worker/engine.ts` drives jq 1.8.2 itself (the `jq-wasm`
   package, pinned exactly), so previews are what jq produces. The engine was
@@ -149,9 +149,26 @@ whole source as one filter; per-node previews arrive with the canvas.
 - **Errors.** jq's exit codes are ambiguous (a compile error and `halt_error(3)`
   both exit 3), so `engine.ts` reads stderr to name errors `JqInputError`,
   `JqCompileError` or `JqRuntimeError`, dropping jq's "(at /dev/stdin:0)".
-  `src/worker/client.ts` maps them to `EngineError` kinds and restarts the
-  worker after a crash or a call running over 10 s (an infinite filter would
-  otherwise block every later preview).
+  `src/worker/client.ts` maps them to `EngineError` kinds. jq can't be
+  interrupted, so the client terminates the worker after a crash, a call running
+  over 10 s (an infinite filter would otherwise block every later preview), or
+  an abandoned call (`AbortSignal`) still busy after 300 ms. Only that call
+  fails: calls queued behind it are re-sent to a fresh worker, so no stage ever
+  inherits (and caches) another stage's error.
+- **Previews (invariants 3 and 4).** `src/ui/usePreviews.ts` samples the input in
+  the worker once per input change (`core/eval/sample.ts`: every array cut to 200
+  elements at any depth, at most 200 documents; text in, text out), then runs
+  `runPipeline` with the source node as identity, so invalid input surfaces on
+  the input node. Results are per node (ok, error, or blocked by an earlier
+  error), cached including errors, and a newer edit abandons the run in flight.
+  Stage-by-stage previews equal the whole program except where a later stage
+  reads `input`/`inputs` or `$__loc__`, or relies on stopping an earlier one
+  early (`halt`, `error`); "Run full" (`src/ui/OutputPane.tsx`) is the exact jq
+  answer, and any edit returns to previews.
+- **Canvas.** `src/ui/PipelineCanvas.tsx` derives React Flow nodes from the model
+  and results on every render; positions come from the node index and are never
+  stored (invariant 1), so nodes aren't draggable. Selection (click, or Enter on
+  a focused node) is UI state in the store; with none, the last node is shown.
 - **JSON crosses the JS boundary as text, never as parsed JS values.** `JSON.parse`
   moves integer-like keys first and rounds big numbers. Input is jq's input
   format (zero or more JSON values, so several pasted documents are several
@@ -183,12 +200,13 @@ whole source as one filter; per-node previews arrive with the canvas.
   placeholder environment, `input_filename` is `"/dev/stdin"`, modules
   (`import`/`include`) can't load, and nesting thousands of levels deep
   overflows the wasm stack.
-- **Known rough edges.** Engine errors are readable (jq's own messages) but not
-  yet mapped to the offending node; jq reports a line and column rather than a
-  range, so convert before comparing with a `TextRange`. The main JS chunk is ~555 KB
-  (169 KB gzipped), mostly CodeMirror and web-tree-sitter; code-split it in the
-  Quality-bar work. Previews run against the full input; sampling (invariant 4)
-  comes with per-node previews.
+- **Known rough edges.** A stage's compile error is jq's message about that
+  stage's text alone (its line and column count from the stage, not the editor);
+  map them to the stage's `TextRange` before pointing into the editor. The main
+  JS chunk is ~781 KB (237 KB gzipped): CodeMirror, React Flow and
+  web-tree-sitter; code-split it in the Quality-bar work. The canvas fits the
+  chain down to 70% zoom, then pans; at narrow widths (under ~1,100 px of canvas)
+  five or more nodes render small.
 
 ### Toolchains on this machine
 
