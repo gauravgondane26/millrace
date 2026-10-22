@@ -31,18 +31,29 @@ export interface TextRange {
   end: number
 }
 
-export interface GraphNode {
-  id: string
-  kind: NodeKind
-  /** The exact source text this node was projected from. */
+/** A piece of source text and where it sits, e.g. one argument of a call. */
+export interface Span {
   text: string
-  /** Where `text` sits in the source string. */
   range: TextRange
 }
 
+export interface GraphNode extends Span {
+  id: string
+  kind: NodeKind
+  /**
+   * The call's arguments, in order (`select`'s predicate, `limit`'s count and
+   * filter, ...). Empty for paths, `unique`, `source` and custom nodes.
+   */
+  args: Span[]
+}
+
 /**
- * A linear pipe chain. Object/array construction fans this out into a DAG;
- * that is deferred until the projection grows beyond linear chains.
+ * A linear pipe chain, `nodes[0]` always being the `source` node: the input
+ * data. When the program starts with a bare `.`, the source node owns that
+ * `.`; otherwise its range is empty, marking where the first stage begins.
+ *
+ * Object/array construction fans this out into a DAG; that is deferred until
+ * the projection grows beyond linear chains (until then it is custom).
  */
 export interface GraphModel {
   nodes: GraphNode[]
