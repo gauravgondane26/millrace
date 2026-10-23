@@ -111,9 +111,25 @@ function dispatch(call: Call): void {
       }
       // Anything else is the wasm trapping or overflowing its stack; its
       // state can no longer be trusted, so start over.
-      restart(target, call, new EngineError('crash', `The jq engine crashed and was restarted: ${message}`))
+      restart(target, call, new EngineError('crash', crashMessage(message)))
     },
   )
+}
+
+/**
+ * What a crash says, in place of Emscripten's own words ("Aborted(). Build
+ * with -sASSERTIONS for more info."), which mean nothing to someone running
+ * a filter. jq-wasm aborts when its 256 MB heap runs out, and overflowing
+ * its stack (values nested thousands deep) reads as a memory fault.
+ */
+export function crashMessage(message: string): string {
+  if (/^Aborted\(/.test(message)) {
+    return 'jq ran out of memory and was restarted. It has 256 MB to work in here, enough for inputs up to about 20 MB.'
+  }
+  if (/memory access out of bounds|call stack/i.test(message)) {
+    return 'jq ran out of stack, likely on values nested thousands of levels deep, and was restarted.'
+  }
+  return `The jq engine crashed and was restarted: ${message}`
 }
 
 function restart(target: Engine, culprit: Call, error: EngineError): void {

@@ -108,6 +108,14 @@ describe('worker client', () => {
     expect(workers).toHaveLength(2)
   })
 
+  it('says what a crash means, not what Emscripten printed', async () => {
+    const { crashMessage } = await loadClient()
+    // what jq-wasm throws when its heap runs out, and on a deeply nested value
+    expect(crashMessage('Aborted(). Build with -sASSERTIONS for more info.')).toMatch(/^jq ran out of memory/)
+    expect(crashMessage('memory access out of bounds')).toMatch(/^jq ran out of stack/)
+    expect(crashMessage('unreachable')).toBe('The jq engine crashed and was restarted: unreachable')
+  })
+
   it('times out a filter that never finishes; calls queued behind it go to a fresh worker', async () => {
     vi.useFakeTimers()
     const { runFilterInWorker } = await loadClient()
