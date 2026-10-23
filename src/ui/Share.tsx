@@ -1,6 +1,7 @@
 import type { EditorView } from '@codemirror/view'
 import { useState, type RefObject } from 'react'
 import { shareFragment } from '../core/persist/share.ts'
+import { iconButton, ShareIcon } from './icons.tsx'
 import { useAppStore } from './store.ts'
 
 const COPIED = 'Link copied. It holds the jq and the input, and nothing is uploaded.'
@@ -55,8 +56,8 @@ export function ShareButton({ editor }: { editor: RefObject<EditorView | null> }
           </button>
         </>
       )}
-      <button type="button" onClick={() => void share()} className={button}>
-        Share
+      <button type="button" aria-label="Share" title="Share a link" onClick={() => void share()} className={iconButton}>
+        <ShareIcon />
       </button>
     </div>
   )

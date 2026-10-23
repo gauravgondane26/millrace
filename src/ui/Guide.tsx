@@ -2,6 +2,7 @@ import type { EditorView } from '@codemirror/view'
 import * as Dialog from '@radix-ui/react-dialog'
 import { useRef, type ReactNode, type RefObject } from 'react'
 import { GUIDE_SECTIONS, type GuideExample, type GuideSection } from '../core/guide/sections.ts'
+import { BookIcon, iconButton } from './icons.tsx'
 import { openDocument } from './persist.ts'
 import { useAppStore } from './store.ts'
 
@@ -28,8 +29,8 @@ export function GuideRoot({ children }: { children: ReactNode }) {
 /** Opens and closes the guide; focus comes back here when it closes. */
 export function GuideButton() {
   return (
-    <Dialog.Trigger className="shrink-0 rounded border border-neutral-500 px-2 py-0.5 text-xs text-neutral-100 hover:bg-neutral-800 focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-400 aria-expanded:bg-neutral-800">
-      Guide
+    <Dialog.Trigger aria-label="Guide" title="Guide" className={`${iconButton} aria-expanded:bg-neutral-800`}>
+      <BookIcon />
     </Dialog.Trigger>
   )
 }
@@ -51,7 +52,9 @@ export function GuidePanel({ editor }: { editor: RefObject<EditorView | null> })
         const focused = document.activeElement
         if (focused && focused !== document.body && !panel.current?.contains(focused)) e.preventDefault()
       }}
-      className="absolute inset-y-0 right-0 z-30 flex w-[22rem] flex-col border-l border-neutral-500 bg-neutral-900 text-neutral-100 shadow-2xl max-md:w-full max-md:border-l-0 focus:outline-none"
+      // slides in and out (Radix keeps it mounted until the closing animation
+      // ends); with reduced motion it just appears and goes
+      className="absolute inset-y-0 right-0 z-30 flex w-[22rem] flex-col border-l border-neutral-500 bg-neutral-900 text-neutral-100 shadow-2xl focus:outline-none max-md:w-full max-md:border-l-0 motion-safe:data-[state=closed]:animate-guide-out motion-safe:data-[state=open]:animate-guide-in"
     >
       <div className="flex shrink-0 items-center gap-2 border-b border-neutral-800 px-4 py-2">
         <Dialog.Title className="flex-1 text-sm font-semibold">Guide</Dialog.Title>

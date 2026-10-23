@@ -138,7 +138,6 @@ export function App() {
               </>
             )}
           </div>
-          <GuideButton />
           {/* written by the build (scripts/license-notices.ts) */}
           <a
             href="licenses.txt"
@@ -148,12 +147,14 @@ export function App() {
           >
             Licenses
           </a>
+          <GuideButton />
           <ShareButton editor={editorView} />
         </header>
 
         {/* The guide's drawer lies over the panes, inside this box: opening it
-            moves no pane, and on narrow screens it stays put while they scroll. */}
-        <div className="relative flex min-h-0 flex-1 flex-col">
+            moves no pane, and on narrow screens it stays put while they scroll.
+            Clipped, so the drawer sliding in never scrolls the page sideways. */}
+        <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
           {/* Two columns from md up. Narrower, one column of fixed-height panes
               that scrolls as a page, so no pane is squeezed to a sliver. */}
           <main className="grid min-h-0 flex-1 grid-cols-1 overflow-y-auto md:grid-cols-[minmax(0,2fr)_minmax(0,3fr)] md:overflow-hidden">
