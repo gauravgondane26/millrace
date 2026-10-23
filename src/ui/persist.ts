@@ -208,8 +208,24 @@ export function keepPrevious(current: Doc, shared: Doc): boolean {
 }
 
 /**
- * Undo for opening a shared link: the jq goes back through the editor, as
- * one undoable step like the opening was, and the input back into its pane.
+ * Opens a document in place of the one in the app (a share link pasted into
+ * an open tab, a guide example): the jq through the editor, as one undoable
+ * step (openSpec), and the input, if it has one, into the input pane. The
+ * document it replaces is kept, so the notice can offer Undo for both;
+ * `notice` says what happened, given whether there was anything to keep.
+ */
+export function openDocument(view: EditorView, doc: { source: string; input?: string }, notice: (replaced: boolean) => string) {
+  const { setNotice, setInputText, selectNode, inputText } = useAppStore.getState()
+  const kept = keepPrevious({ source: view.state.doc.toString(), input: inputText }, doc)
+  view.dispatch(openSpec(view.state.doc, doc.source))
+  if (doc.input !== undefined) setInputText(doc.input)
+  selectNode(null)
+  setNotice(notice(kept), kept ? 'restorePrevious' : null)
+}
+
+/**
+ * Undo for opening a document: the jq goes back through the editor, as one
+ * undoable step like the opening was, and the input back into its pane.
  */
 export function restorePrevious(view: EditorView | null) {
   const doc = previous
