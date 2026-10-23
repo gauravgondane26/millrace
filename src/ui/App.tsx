@@ -108,6 +108,15 @@ export function App() {
             ×
           </button>
         )}
+        {/* written by the build (scripts/license-notices.ts) */}
+        <a
+          href="licenses.txt"
+          target="_blank"
+          rel="noopener"
+          className="shrink-0 rounded px-1 text-xs text-neutral-400 underline-offset-2 hover:text-neutral-100 hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-400"
+        >
+          Licenses
+        </a>
         <ShareButton editor={editorView} />
       </header>
 
