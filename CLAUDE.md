@@ -377,10 +377,14 @@ each section with an example to try (see Guide).
   buttons moves no edge.
 - **Guide.** `src/ui/Guide.tsx` is a non-modal drawer (Radix Dialog,
   `modal={false}`) opened by the header's Guide button or the empty Output
-  pane's "Open the guide" (store `guideOpen`; nothing saved). It lies over
-  the right edge of the panes, inside a positioned box around `<main>`
-  (full width below `md`), so it moves no pane and leaves the header's
-  notice visible. Working beside it doesn't close it; Escape does only with
+  pane's "Open the guide" (store `guideOpen`; nothing saved). Guide and
+  Share are icon buttons side by side after Licenses (`ui/icons.tsx`,
+  drawn inline; named by `aria-label`, with a `title` tooltip). It lies over
+  the right edge of the panes, inside a clipped positioned box around
+  `<main>` (full width below `md`), so it moves no pane and leaves the
+  header's notice visible. It slides in and out over 250 ms (keyframes in
+  `tailwind.config.js`, on Radix's `data-state`, so Radix unmounts it once
+  the closing animation ends), not at all under reduced motion. Working beside it doesn't close it; Escape does only with
   focus in it, so Escape in the editor or a field keeps its meaning. The
   content is data in `core/guide/sections.ts`: eight sections and a jq
   cheat sheet, paragraphs as plain strings with backticked code. **Every
