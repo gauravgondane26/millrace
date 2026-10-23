@@ -13,6 +13,25 @@ export default defineConfig({
   worker: {
     format: 'es',
   },
+  build: {
+    rollupOptions: {
+      output: {
+        // the big libraries in chunks of their own: they download in
+        // parallel, and an app change doesn't invalidate their cache
+        // (module ids use forward slashes on every platform)
+        manualChunks(id) {
+          const pkg = /\/node_modules\/((?:@[^/]+\/)?[^/]+)\//.exec(id)?.[1]
+          if (!pkg) return undefined
+          if (pkg.startsWith('@xyflow/') || pkg.startsWith('d3-') || pkg === 'classcat') return 'react-flow'
+          if (pkg.startsWith('@codemirror/') || pkg.startsWith('@lezer/')) return 'codemirror'
+          if (['style-mod', 'w3c-keyname', 'crelt'].includes(pkg)) return 'codemirror'
+          if (['react', 'react-dom', 'scheduler'].includes(pkg)) return 'react'
+          if (pkg === 'web-tree-sitter') return 'tree-sitter'
+          return undefined
+        },
+      },
+    },
+  },
   test: {
     globals: true,
     environment: 'node',

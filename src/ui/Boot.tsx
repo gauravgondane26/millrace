@@ -1,6 +1,11 @@
-import { useEffect, useState } from 'react'
-import { App } from './App.tsx'
+import { lazy, Suspense, useEffect, useState } from 'react'
 import { restoreDocument } from './persist.ts'
+
+// The app (CodeMirror, React Flow, the parser) is most of the code. Its
+// download starts here, at once, in parallel with the restore, and this
+// shell paints without waiting for it.
+const loading = import('./App.tsx')
+const App = lazy(() => loading.then((m) => ({ default: m.App })))
 
 /**
  * Restores the working document (or opens a shared link) before the app
@@ -18,12 +23,17 @@ export function Boot() {
       live = false
     }
   }, [])
-  if (ready) return <App />
-  return (
+  const opening = (
     <div className="flex h-full items-center justify-center bg-neutral-950">
       <p role="status" className="text-sm text-neutral-400">
         Opening your document…
       </p>
     </div>
+  )
+  if (!ready) return opening
+  return (
+    <Suspense fallback={opening}>
+      <App />
+    </Suspense>
   )
 }

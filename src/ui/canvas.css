@@ -1,0 +1,24 @@
+/*
+ * Overrides of React Flow's stylesheet, imported right after it (in
+ * PipelineCanvas) so they win wherever the bundler puts the two.
+ *
+ * Contrast (WCAG 1.4.11 and 1.4.3, against its #141414 pane):
+ * edges at 3.9:1 rather than #3e3e3e's 1.6:1, and its attribution link
+ * readable on its own backdrop.
+ */
+.react-flow {
+  --xy-edge-stroke: theme('colors.neutral.500');
+}
+.react-flow__attribution a {
+  color: theme('colors.neutral.400');
+}
+
+/*
+ * React Flow drops the outline from a focused node and draws its own ring
+ * only for its built-in node types, so a stage card reached with Tab showed
+ * no focus at all. The ring goes on the card, around the selection border.
+ */
+.react-flow__node:focus-visible > * {
+  outline: 2px solid theme('colors.blue.400');
+  outline-offset: 3px;
+}
