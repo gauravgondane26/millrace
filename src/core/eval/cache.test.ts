@@ -68,6 +68,24 @@ describe('runPipeline — failures', () => {
     expect(result.ran).toEqual(['n1', 'n2', 'n3'])
   })
 
+  it('reports each result as it settles, before a slow stage ends', async () => {
+    let release: ((out: StageOutput) => void) | undefined
+    const run = vi.fn((filter: string, input: string) =>
+      filter === 'f3'
+        ? new Promise<StageOutput>((resolve) => (release = resolve))
+        : Promise.resolve({ text: `${input} | ${filter}`, truncated: false }),
+    )
+    const heard: string[] = []
+    const done = runPipeline(sixNodes(), 'in', run, createCache(), undefined, (id, r) => heard.push(`${id}:${r.status}`))
+    await vi.waitFor(() => expect(release).toBeDefined())
+    // n3 is still running: n1 and n2 are already out
+    expect(heard).toEqual(['n1:ok', 'n2:ok'])
+
+    release?.({ text: 'slow', truncated: false })
+    const result = await done
+    expect(heard).toEqual([...result.results].map(([id, r]) => `${id}:${r.status}`))
+  })
+
   it('names the filter text that failed', async () => {
     const result = await runPipeline(sixNodes(), 'in', failingAt('f3'), createCache())
     expect(result.results.get('n3')).toEqual({ status: 'error', error: new Error('f3 failed'), filter: 'f3' })

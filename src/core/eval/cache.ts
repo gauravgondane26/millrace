@@ -103,6 +103,9 @@ type Flow = { text: string; partial: boolean } | { failed: string }
  * that times out isn't re-run on every edit elsewhere. If `signal` aborts,
  * this rejects with the abort reason and caches nothing from the abandoned
  * call.
+ *
+ * `onResult` hears each node's result as it is settled, in the order of
+ * `results`, so a caller can show the fast stages before a slow one ends.
  */
 export async function runPipeline(
   nodes: readonly PipelineNode[],
@@ -110,9 +113,14 @@ export async function runPipeline(
   runFilter: RunFilter,
   cache: PipelineCache,
   signal?: AbortSignal,
+  onResult?: (id: string, result: NodeResult) => void,
 ): Promise<RunResult> {
   const results = new Map<string, NodeResult>()
   const ran: string[] = []
+  const settle = (id: string, result: NodeResult) => {
+    results.set(id, result)
+    onResult?.(id, result)
+  }
 
   const runChain = async (chain: readonly PipelineNode[], from: Flow): Promise<Flow> => {
     let flow = from
@@ -123,11 +131,11 @@ export async function runPipeline(
         if ('failed' in out) laneFailure ??= out.failed
       }
       if ('failed' in flow) {
-        results.set(node.id, { status: 'blocked', by: flow.failed })
+        settle(node.id, { status: 'blocked', by: flow.failed })
         continue
       }
       if (laneFailure !== null) {
-        results.set(node.id, { status: 'blocked', by: laneFailure })
+        settle(node.id, { status: 'blocked', by: laneFailure })
         flow = { failed: laneFailure }
         continue
       }
@@ -152,10 +160,10 @@ export async function runPipeline(
       }
 
       if (result.status === 'ok') {
-        results.set(node.id, { ...result, partial: flow.partial })
+        settle(node.id, { ...result, partial: flow.partial })
         flow = { text: result.output.text, partial: flow.partial || result.output.truncated }
       } else {
-        results.set(node.id, result)
+        settle(node.id, result)
         flow = { failed: node.id }
       }
     }
