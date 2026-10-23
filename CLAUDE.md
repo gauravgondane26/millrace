@@ -97,7 +97,8 @@ Pinned. Don't substitute without asking.
   both required.
 - jq 1.8.2 compiled to WASM (the `jq-wasm` package, pinned exactly) for execution,
   in a worker, via comlink. Chosen over jaq, which differs from jq in common
-  idioms (see Status).
+  idioms (see Status). `postinstall` (`scripts/patch-jq-wasm.mjs`) raises its
+  memory cap from 256 MB to 1 GB; it refuses any other jq-wasm version.
 - Zustand for the small amount of UI state that isn't derived
 - Tailwind + Radix primitives
 - Vitest for unit tests
@@ -132,6 +133,8 @@ correctness-critical decision lives, so it is the part that gets tests.
 - `npm run test:e2e` — Playwright against the production build (served on :4174);
   screenshots land in `test-results/screens/`
 - `npm run build:grammar` — rebuild the jq grammar wasm (needs git and network)
+- `npm install` also runs `postinstall`, which patches jq-wasm's memory cap
+  (idempotent; `node scripts/patch-jq-wasm.mjs` reruns it)
 
 ## Status
 
@@ -142,12 +145,13 @@ The document survives a reload, and Share copies a link to it.
 Previews run stage by stage on a sample of the input; "Run full" runs the whole
 program on the whole input.
 
-**Phase 9 (quality bar) in progress.** Done: compile errors placed on their
-node and in the editor (see Errors); no layout shift (see Layout); keyboard,
-focus and contrast (see Accessibility); narrow screens; big inputs and
-outputs, and code-splitting (see Big inputs); license notices (see Bundle).
-Left: last, our own jq build with a larger heap (Run full on a 50 MB input still
-runs jq out of memory).
+**Phase 9 (quality bar) done.** Compile errors placed on their node and in
+the editor (see Errors); no layout shift (see Layout); keyboard, focus and
+contrast (see Accessibility); narrow screens; big inputs and outputs, and
+code-splitting (see Big inputs); license notices (see Bundle); a 1 GB jq heap,
+so Run full handles a 50 MB input (see Engine limits). The app is dark only,
+which the user accepted as the quality bar's "Dark mode". What remains before
+the app is done is the "Open issues" list below.
 
 - **Execution.** `src/worker/engine.ts` drives jq 1.8.2 itself (the `jq-wasm`
   package, pinned exactly), so previews are what jq produces. The engine was
@@ -161,7 +165,8 @@ runs jq out of memory).
   `JqCompileError` or `JqRuntimeError`, dropping jq's "(at /dev/stdin:0)".
   `src/worker/client.ts` maps them to `EngineError` kinds. jq can't be
   interrupted, so the client terminates the worker after a crash, a call running
-  over 10 s (an infinite filter would otherwise block every later preview), or
+  over 10 s (60 s for Run full, which has a Stop button; an infinite filter
+  would otherwise block every later preview), or
   an abandoned call (`AbortSignal`) still busy after 300 ms. Only that call
   fails: calls queued behind it are re-sent to a fresh worker, so no stage ever
   inherits (and caches) another stage's error.
@@ -277,13 +282,18 @@ runs jq out of memory).
   indices for JS strings, the same unit as CodeMirror, so one `TextRange` type is
   used everywhere with no conversion. Where invariant 2 and the Stack section say
   "byte range", read "range".
-- **Engine limits (jq-wasm).** jq's heap is capped at 256 MB, so inputs above
-  roughly 20 MB abort (the worker restarts). The plan is our own jq build with a
-  larger heap as the last Phase 9 item; that build can also stop output mid-run.
-  Until then jq buffers its whole output: the preview limit
+- **Engine limits (jq-wasm).** jq's heap is capped at 1 GB: stock jq-wasm stops
+  at 256 MB (about 20 MB of input), and `scripts/patch-jq-wasm.mjs` raises the
+  two numbers that set it, the wasm memory's maximum pages and the glue's
+  `getHeapMax()`, on install (the user chose this over building jq with
+  Emscripten). A 50 MB input runs in 1 to 5 s; `engine.test.ts` checks the cap
+  with a 320 MB string. wasm memory never shrinks, so the client retires a
+  worker once idle after jq ran on an input of 10 MB or more
+  (`RETIRE_AFTER_INPUT`). jq buffers its whole output and can't be stopped
+  mid-run (that needed our own build): the preview limit
   (`PREVIEW_OUTPUT_LIMIT`, ~1 MB) trims what is kept, and runaway filters are
   bounded by the timeout and the heap (endlessly repeating a large value can
-  hold several hundred MB until the timeout). `$ENV`/`env` show Emscripten's
+  hold up to 1 GB until the timeout). `$ENV`/`env` show Emscripten's
   placeholder environment, `input_filename` is `"/dev/stdin"`, modules
   (`import`/`include`) can't load, and nesting thousands of levels deep
   overflows the wasm stack. `crashMessage` in `client.ts` names both in plain
@@ -362,6 +372,10 @@ is resolved.
    `visibilitychange`/`pagehide` is asynchronous and doesn't include the editor's
    uncommitted text, so closing a tab right after typing can drop the last
    keystrokes.
+6. **Previews publish only when the whole pipeline is done.** `usePreviews`
+   sets results once `runPipeline` finishes, so one slow or endless stage
+   keeps every node, the input node included, at "running…" until it ends or
+   times out (10 s). Publishing each node's result as it lands would fix it.
 
 ### Toolchains on this machine
 
