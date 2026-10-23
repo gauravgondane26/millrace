@@ -261,16 +261,22 @@ the app is done is the "Open issues" list below.
   Share (`src/ui/Share.tsx`) copies `#v1=<lz-string>` (`core/persist/share.ts`):
   the jq, plus the input while the fragment stays under 32,000 characters
   (input over 10× that isn't even compressed, so a big input can't freeze the
-  page); otherwise the link holds the jq only and says so. If the clipboard is
+  page); otherwise the link holds the jq only and says so. The 32,000 cap is
+  a decision (the user's, Phase 9): links have to survive chat apps and
+  address bars, the jq is the product, and a big input travels better as a
+  file. If the clipboard is
   refused, the link is shown to copy by hand. Opening a link at startup wins
   over the saved document and becomes the working one; the fragment is then
   cleared, so a reload keeps later edits. A link pasted into a tab already
   open only fires `hashchange` (`src/ui/useSharedLinks.ts`): its jq goes
   through the editor as one undoable step (`openSpec`, committed at once like
-  undo); its input replaces the input pane, which has no undo. Unreadable
+  undo); its input replaces the input pane. Either way the document a link
+  replaces is kept in memory for the session (`keepPrevious`), and the
+  notice offers Undo (store `noticeAction`), which puts back the jq (through
+  the editor, so Ctrl+Z returns to the link's) and the input; there is no
+  Undo when there was nothing different to lose. Unreadable
   links, storage the browser refuses, and failed saves each post a notice in
-  the header (store `notice`, a live region). The trade-offs still open are
-  listed under "Open issues" below.
+  the header (store `notice`, a live region).
 - **JSON crosses the JS boundary as text, never as parsed JS values.** `JSON.parse`
   moves integer-like keys first and rounds big numbers. Input is jq's input
   format (zero or more JSON values, so several pasted documents are several
@@ -362,17 +368,7 @@ Known gaps, accepted for now so each phase could land. Each needs a fix, or an
 explicit decision to keep it, before the app is done. Remove an entry once it
 is resolved.
 
-1. **Opening a share link loses the document it replaces.** At startup the
-   link's document overwrites the saved one, with no way back. In an open tab
-   the jq can be undone (Ctrl+Z in the editor), but the input pane has no undo,
-   so a link that carries input replaces yours for good. Any fix has to stay
-   within the persistence scope (IndexedDB working document plus URL fragment,
-   nothing else), or the scope has to change first.
-2. **Share links cap at 32,000 characters** (`MAX_FRAGMENT_LENGTH` in
-   `core/persist/share.ts`); past that, a link carries the jq only and says so.
-   Browsers take far longer URLs, but chat apps and address bars mangle them
-   sooner. Settle the limit, or offer the longer link with a warning.
-3. **Several tabs overwrite each other.** Each tab saves its own document to the
+1. **Several tabs overwrite each other.** Each tab saves its own document to the
    same IndexedDB records, and the last save wins, with no warning.
 
 ### Toolchains on this machine
