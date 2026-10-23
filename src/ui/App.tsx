@@ -111,9 +111,11 @@ export function App() {
         <ShareButton editor={editorView} />
       </header>
 
-      <main className="grid min-h-0 flex-1 grid-cols-[minmax(0,2fr)_minmax(0,3fr)]">
-        <div className="flex min-h-0 flex-col border-r border-neutral-800">
-          <Pane label="Input JSON" className="flex-1 border-b border-neutral-800">
+      {/* Two columns from md up. Narrower, one column of fixed-height panes
+          that scrolls as a page, so no pane is squeezed to a sliver. */}
+      <main className="grid min-h-0 flex-1 grid-cols-1 overflow-y-auto md:grid-cols-[minmax(0,2fr)_minmax(0,3fr)] md:overflow-hidden">
+        <div className="flex flex-col border-neutral-800 max-md:border-b md:min-h-0 md:border-r">
+          <Pane label="Input JSON" className="h-40 border-b border-neutral-800 max-md:shrink-0 md:h-auto md:flex-1">
             <textarea
               aria-label="Input JSON"
               spellCheck={false}
@@ -123,13 +125,13 @@ export function App() {
               className="h-full w-full resize-none bg-neutral-900 p-3 font-mono text-sm text-neutral-100 outline-none placeholder:text-neutral-400 focus-visible:outline focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-blue-400"
             />
           </Pane>
-          <Pane label="jq filter" className="flex-1">
+          <Pane label="jq filter" className="h-40 max-md:shrink-0 md:h-auto md:flex-1">
             <JqEditor viewRef={editorView} />
           </Pane>
         </div>
 
-        <div className="flex min-h-0 flex-col">
-          <Pane label="Pipeline" className="flex-1 border-b border-neutral-800">
+        <div className="flex flex-col md:min-h-0">
+          <Pane label="Pipeline" className="h-80 border-b border-neutral-800 max-md:shrink-0 md:h-auto md:flex-1">
             {model ? (
               <PipelineCanvas
                 model={model}
@@ -164,7 +166,7 @@ export function App() {
             </div>
           </Pane>
 
-          <Pane label="Output" className="flex-1">
+          <Pane label="Output" className="h-96 max-md:shrink-0 md:h-auto md:flex-1">
             <OutputPane source={source} input={input} model={model} previews={previews} selected={selected} />
           </Pane>
         </div>

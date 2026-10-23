@@ -49,6 +49,8 @@ export function JqEditor({ viewRef }: { viewRef?: MutableRefObject<EditorView | 
           highlightActiveLine(),
           bracketMatching(),
           keymap.of([...defaultKeymap, ...historyKeymap]),
+          // jq is often one long line: wrapped, the whole program stays in view
+          EditorView.lineWrapping,
           EditorView.contentAttributes.of({ 'aria-label': 'jq filter source' }),
           editorTheme,
           EditorView.updateListener.of((update) => {

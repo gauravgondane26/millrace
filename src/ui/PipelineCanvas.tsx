@@ -237,13 +237,33 @@ function Canvas({ model, results, running, selectedId, onSelect, edits, onAddAft
     }
   }
 
-  const { fitView } = useReactFlow()
+  const { fitView, getInternalNode, getViewport, setViewport } = useReactFlow()
   const count = nodes.length
+  const fitted = useRef<number | null>(null)
   useEffect(() => {
     // after React Flow has measured the new nodes
-    const frame = requestAnimationFrame(() => void fitView(FIT))
+    const frame = requestAnimationFrame(() => {
+      const fit = fitted.current === count ? Promise.resolve() : fitView(FIT)
+      fitted.current = count
+      void fit.then(() => {
+        // Fitting stops at FIT.minZoom, so a long chain is cut at both ends;
+        // pan just far enough that the selected node (by default the last,
+        // the program's result) is whole on screen.
+        const el = container.current
+        const target = selectedId === null ? undefined : getInternalNode(selectedId)
+        if (!el || !target) return
+        const { x, y, zoom } = getViewport()
+        const pad = 16
+        const pan = (start: number, size: number, view: number) =>
+          start < pad ? pad - start : start + size > view - pad ? Math.max(pad - start, view - pad - start - size) : 0
+        const { positionAbsolute: at } = target.internals
+        const dx = pan(at.x * zoom + x, (target.measured.width ?? CARD_WIDTH) * zoom, el.clientWidth)
+        const dy = pan(at.y * zoom + y, (target.measured.height ?? 0) * zoom, el.clientHeight)
+        if (dx !== 0 || dy !== 0) void setViewport({ x: x + dx, y: y + dy, zoom })
+      })
+    })
     return () => cancelAnimationFrame(frame)
-  }, [count, fitView])
+  }, [count, selectedId, fitView, getInternalNode, getViewport, setViewport])
 
   return (
     <Actions.Provider value={actions}>
