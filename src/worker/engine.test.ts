@@ -20,6 +20,11 @@ async function rejection(promise: Promise<unknown>): Promise<Error> {
 }
 
 describe('jq engine', () => {
+  it('has 1 GB to work in (scripts/patch-jq-wasm.mjs; stock jq-wasm stops at 256 MB)', async () => {
+    // a 320 MB string: stock jq-wasm aborts on it
+    expect(await run('"abcdefgh" * 40000000 | length', 'null')).toBe('320000000\n')
+  })
+
   it.each([
     ['.[]', '[1,2,3]', '1\n2\n3\n'],
     ['map(.*2)', '[1,2,3]', '[2,4,6]\n'],

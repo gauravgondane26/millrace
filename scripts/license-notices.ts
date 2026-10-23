@@ -19,7 +19,10 @@ const packages = new Map<string, string>()
 
 /** Software in the wasm modules: a title and a file in licenses/ or public/. */
 const COMPILED_IN = [
-  { title: 'jq 1.8.2 (MIT), with decNumber (ICU license), compiled to WASM in jq-wasm', file: 'licenses/jq.txt' },
+  {
+    title: 'jq 1.8.2 (MIT), with decNumber (ICU license), compiled to WASM in jq-wasm (its memory cap raised to 1 GB by millrace)',
+    file: 'licenses/jq.txt',
+  },
   { title: 'Oniguruma, the regex library jq links (BSD-2-Clause)', file: 'licenses/oniguruma.txt' },
   {
     title: 'Emscripten (MIT / University of Illinois NCSA), whose runtime is compiled into jq-wasm and web-tree-sitter',

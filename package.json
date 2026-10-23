@@ -13,7 +13,8 @@
     "typecheck": "tsc -b --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:e2e": "playwright test"
+    "test:e2e": "playwright test",
+    "postinstall": "node scripts/patch-jq-wasm.mjs"
   },
   "dependencies": {
     "@codemirror/commands": "^6.7.1",
