@@ -111,7 +111,9 @@ describe('worker client', () => {
   it('says what a crash means, not what Emscripten printed', async () => {
     const { crashMessage } = await loadClient()
     // what jq-wasm throws when its heap runs out, and on a deeply nested value
-    expect(crashMessage('Aborted(). Build with -sASSERTIONS for more info.')).toMatch(/^jq ran out of memory/)
+    expect(crashMessage('Aborted(). Build with -sASSERTIONS for more info.')).toBe(
+      'jq ran out of memory and was restarted. It has 1 GB to work in here.',
+    )
     expect(crashMessage('memory access out of bounds')).toMatch(/^jq ran out of stack/)
     expect(crashMessage('unreachable')).toBe('The jq engine crashed and was restarted: unreachable')
   })
@@ -130,6 +132,36 @@ describe('worker client', () => {
     expect(await queued).toEqual(ok('1 | .a')) // a bystander never inherits another call's error
     expect(workers[0]?.terminated).toBe(true)
     expect(workers).toHaveLength(2)
+  })
+
+  it('gives a full run its own, longer timeout', async () => {
+    vi.useFakeTimers()
+    const { runInWorker, FULL_RUN_TIMEOUT_MS, PREVIEW_OUTPUT_LIMIT } = await loadClient()
+    behavior.run = never
+    const full = rejection(runInWorker('slow', '1', PREVIEW_OUTPUT_LIMIT, undefined, FULL_RUN_TIMEOUT_MS))
+    await vi.advanceTimersByTimeAsync(10_000)
+    expect(workers[0]?.terminated).toBe(false) // a preview would have stopped here
+    await vi.advanceTimersByTimeAsync(FULL_RUN_TIMEOUT_MS - 10_000)
+    expect((await full).message).toBe('Stopped after 60 s: the filter may never finish.')
+  })
+
+  it('retires the worker after jq ran on a large input, once the calls on it are done', async () => {
+    const { runInWorker, runFilterInWorker, RETIRE_AFTER_INPUT } = await loadClient()
+    let release: ((out: RunOutput) => void) | undefined
+    behavior.run = (f) => (f === 'slow' ? new Promise((resolve) => (release = resolve)) : Promise.resolve(ok(f)))
+
+    const slow = runFilterInWorker('slow', '1')
+    await vi.waitFor(() => expect(release).toBeDefined())
+    expect(await runInWorker('big', 'x'.repeat(RETIRE_AFTER_INPUT))).toEqual(ok('big'))
+    // still busy with the slow call; a new call already goes to a fresh worker
+    expect(workers[0]?.terminated).toBe(false)
+    expect(await runFilterInWorker('next', '1')).toEqual(ok('next'))
+    expect(workers).toHaveLength(2)
+
+    release?.(ok('slow'))
+    expect(await slow).toEqual(ok('slow'))
+    await vi.waitFor(() => expect(workers[0]?.terminated).toBe(true))
+    expect(workers[1]?.terminated).toBe(false) // small inputs keep their worker
   })
 })
 
