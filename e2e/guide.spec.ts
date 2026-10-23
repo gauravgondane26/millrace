@@ -99,6 +99,30 @@ test('Escape meant for the editor leaves it open', async ({ page }) => {
   await expect(guide(page)).toBeVisible()
 })
 
+test('slides in and out, unless motion is reduced', async ({ page }) => {
+  const animation = () => guide(page).evaluate((el) => getComputedStyle(el).animationName)
+  await guideButton(page).click()
+  expect(await animation()).toBe('guide-in')
+  await page.keyboard.press('Escape')
+  // still there while it slides out, then gone
+  expect(await animation()).toBe('guide-out')
+  await expect(guide(page)).toHaveCount(0)
+
+  await page.emulateMedia({ reducedMotion: 'reduce' })
+  await guideButton(page).click()
+  expect(await animation()).toBe('none')
+  await page.keyboard.press('Escape')
+  await expect(guide(page)).toHaveCount(0)
+})
+
+test('Guide and Share sit side by side, after Licenses', async ({ page }) => {
+  const names = await page
+    .getByRole('banner')
+    .locator('a, button')
+    .evaluateAll((all) => all.map((el) => el.getAttribute('aria-label') ?? el.textContent?.trim()))
+  expect(names.slice(-3)).toEqual(['Licenses', 'Guide', 'Share'])
+})
+
 test('opening it moves no pane', async ({ page }) => {
   await preview(page, USERS, '.users | map(.name)')
   await expect(node(page, 'map: map(.name)')).toContainText('1 value')
@@ -122,9 +146,12 @@ test.describe('on a phone', () => {
 
   test('it is a full-width sheet', async ({ page }) => {
     await guideButton(page).click()
-    const sheet = await box(guide(page))
-    expect(sheet.x).toBe(0)
-    expect(sheet.width).toBe(390)
+    // once it has slid in
+    await expect(async () => {
+      const sheet = await box(guide(page))
+      expect(sheet.x).toBe(0)
+      expect(sheet.width).toBe(390)
+    }).toPass()
     await expect(tryIt(page, 'Bring your data')).toBeInViewport()
     await page.screenshot({ path: `${SCREENS}/guide-phone.png` })
   })
