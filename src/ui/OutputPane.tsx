@@ -5,6 +5,7 @@ import type { GraphModel, GraphNode } from '../core/parse/model.ts'
 import { compileErrors, describeCompileErrors } from '../core/eval/diagnose.ts'
 import { EngineError, formatInWorker, FULL_RUN_TIMEOUT_MS, PREVIEW_OUTPUT_LIMIT, runInWorker, type RunOutput } from '../worker/client.ts'
 import { errorText, messageOf } from './errors.ts'
+import { useAppStore } from './store.ts'
 import { TextView } from './TextView.tsx'
 import { kindLabel, nodeLabel, summarize } from './summary.ts'
 import type { Previews } from './usePreviews.ts'
@@ -32,6 +33,7 @@ type Shown =
 export function OutputPane({ source, input, model, previews, selected: node }: Props) {
   const full = useFullRun(source, input)
   const results = previews.results
+  const setGuideOpen = useAppStore((s) => s.setGuideOpen)
 
   let shown: Shown
   let caption = ''
@@ -94,7 +96,23 @@ export function OutputPane({ source, input, model, previews, selected: node }: P
         <CopyButton text={shown.kind === 'output' ? pretty : null} />
       </div>
       <div className="min-h-0 flex-1">
-        {shown.kind === 'hint' && <Hint>{shown.text}</Hint>}
+        {shown.kind === 'hint' && (
+          <Hint>
+            {shown.text}
+            {blank && (
+              <p className="mt-2">
+                New here?{' '}
+                <button
+                  type="button"
+                  onClick={() => setGuideOpen(true)}
+                  className="rounded text-blue-400 underline underline-offset-2 hover:text-blue-300 focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-400"
+                >
+                  Open the guide
+                </button>
+              </p>
+            )}
+          </Hint>
+        )}
         {shown.kind === 'error' && (
           // whitespace-pre: compile errors are caret diagrams that must not wrap
           <pre tabIndex={0} className={`${scrollable} whitespace-pre text-red-400`}>

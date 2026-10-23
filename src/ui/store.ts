@@ -24,6 +24,10 @@ interface AppState {
   selectedNodeId: string | null
   selectNode: (id: string | null) => void
 
+  /** The guide drawer (ui/Guide) is open. */
+  guideOpen: boolean
+  setGuideOpen: (next: boolean) => void
+
   /** A one-line message in the header: a shared link opened, saving failed, ... */
   notice: string | null
   /**
@@ -48,6 +52,8 @@ export const useAppStore = create<AppState>((set) => ({
   setInputText: (next) => set({ inputText: next }),
   selectedNodeId: null,
   selectNode: (id) => set({ selectedNodeId: id }),
+  guideOpen: false,
+  setGuideOpen: (next) => set({ guideOpen: next }),
   savingElsewhere: false,
   setSavingElsewhere: (next) => set({ savingElsewhere: next }),
   notice: null,

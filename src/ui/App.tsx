@@ -2,6 +2,7 @@ import type { EditorView } from '@codemirror/view'
 import { useCallback, useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react'
 import { locate } from '../core/parse/graph.ts'
 import type { GraphNode } from '../core/parse/model.ts'
+import { GuideButton, GuidePanel, GuideRoot } from './Guide.tsx'
 import { InputPane } from './InputPane.tsx'
 import { JqEditor } from './JqEditor.tsx'
 import { OutputPane } from './OutputPane.tsx'
@@ -92,116 +93,124 @@ export function App() {
   }, [adding, focusNode])
 
   return (
-    <div className="flex h-full flex-col bg-neutral-950 text-neutral-100">
-      <header className="flex items-center gap-2 border-b border-neutral-800 px-4 py-2">
-        <h1 className="text-sm font-semibold tracking-tight">millrace</h1>
-        <span className="shrink-0 text-xs text-neutral-400">jq scratchpad</span>
-        {/* Always rendered: a live region must exist before its text changes.
-            The dismiss button sits outside it, so it isn't read out with the message. */}
-        <div role="status" className="min-w-0 flex-1 truncate text-right text-xs text-amber-300" title={notice ?? undefined}>
-          {notice}
-        </div>
-        {noticeAction === 'restorePrevious' && (
-          <button
-            type="button"
-            onClick={() => restorePrevious(editorView.current)}
-            className="shrink-0 rounded border border-neutral-500 px-2 py-0.5 text-xs text-neutral-100 hover:bg-neutral-800 focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-400"
-          >
-            Undo
-          </button>
-        )}
-        {notice !== null && (
-          <button
-            type="button"
-            aria-label="Dismiss message"
-            onClick={() => setNotice(null)}
-            className="shrink-0 rounded px-1 text-xs text-neutral-400 hover:text-neutral-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-400"
-          >
-            ×
-          </button>
-        )}
-        {/* Its own live region, always there, apart from the notice: it lasts
-            as long as another tab saves, whatever notices come and go. */}
-        <div aria-live="polite" className="flex shrink-0 items-center gap-2 text-xs text-amber-300">
-          {savingElsewhere && (
-            <>
-              <span>Open in another tab: changes here aren’t saved.</span>
-              <button
-                type="button"
-                onClick={saveHere}
-                className="rounded border border-neutral-500 px-2 py-0.5 text-neutral-100 hover:bg-neutral-800 focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-400"
-              >
-                Save here instead
-              </button>
-            </>
+    <GuideRoot>
+      <div className="flex h-full flex-col bg-neutral-950 text-neutral-100">
+        <header className="flex items-center gap-2 border-b border-neutral-800 px-4 py-2">
+          <h1 className="text-sm font-semibold tracking-tight">millrace</h1>
+          <span className="shrink-0 text-xs text-neutral-400">jq scratchpad</span>
+          {/* Always rendered: a live region must exist before its text changes.
+              The dismiss button sits outside it, so it isn't read out with the message. */}
+          <div role="status" className="min-w-0 flex-1 truncate text-right text-xs text-amber-300" title={notice ?? undefined}>
+            {notice}
+          </div>
+          {noticeAction === 'restorePrevious' && (
+            <button
+              type="button"
+              onClick={() => restorePrevious(editorView.current)}
+              className="shrink-0 rounded border border-neutral-500 px-2 py-0.5 text-xs text-neutral-100 hover:bg-neutral-800 focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-400"
+            >
+              Undo
+            </button>
           )}
-        </div>
-        {/* written by the build (scripts/license-notices.ts) */}
-        <a
-          href="licenses.txt"
-          target="_blank"
-          rel="noopener"
-          className="shrink-0 rounded px-1 text-xs text-neutral-400 underline-offset-2 hover:text-neutral-100 hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-400"
-        >
-          Licenses
-        </a>
-        <ShareButton editor={editorView} />
-      </header>
-
-      {/* Two columns from md up. Narrower, one column of fixed-height panes
-          that scrolls as a page, so no pane is squeezed to a sliver. */}
-      <main className="grid min-h-0 flex-1 grid-cols-1 overflow-y-auto md:grid-cols-[minmax(0,2fr)_minmax(0,3fr)] md:overflow-hidden">
-        <div className="flex flex-col border-neutral-800 max-md:border-b md:min-h-0 md:border-r">
-          <Pane label="Input JSON" className="h-40 border-b border-neutral-800 max-md:shrink-0 md:h-auto md:flex-1">
-            <InputPane />
-          </Pane>
-          <Pane label="jq filter" className="h-40 max-md:shrink-0 md:h-auto md:flex-1">
-            <JqEditor viewRef={editorView} />
-          </Pane>
-        </div>
-
-        <div className="flex flex-col md:min-h-0">
-          <Pane label="Pipeline" className="h-80 border-b border-neutral-800 max-md:shrink-0 md:h-auto md:flex-1">
-            {model ? (
-              <PipelineCanvas
-                model={model}
-                results={previews.results}
-                running={previews.running}
-                selectedId={selected?.id ?? null}
-                onSelect={onSelect}
-                edits={edits}
-                onAddAfter={onAddAfter}
-                focusRequest={focusRequest}
-              />
-            ) : parser.status === 'error' ? (
-              <p className="p-3 font-mono text-sm text-red-400">Parser failed to load: {parser.message}</p>
-            ) : (
-              <p className="p-3 font-mono text-sm text-neutral-400">Loading parser…</p>
+          {notice !== null && (
+            <button
+              type="button"
+              aria-label="Dismiss message"
+              onClick={() => setNotice(null)}
+              className="shrink-0 rounded px-1 text-xs text-neutral-400 hover:text-neutral-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-400"
+            >
+              ×
+            </button>
+          )}
+          {/* Its own live region, always there, apart from the notice: it lasts
+              as long as another tab saves, whatever notices come and go. */}
+          <div aria-live="polite" className="flex shrink-0 items-center gap-2 text-xs text-amber-300">
+            {savingElsewhere && (
+              <>
+                <span>Open in another tab: changes here aren’t saved.</span>
+                <button
+                  type="button"
+                  onClick={saveHere}
+                  className="rounded border border-neutral-500 px-2 py-0.5 text-neutral-100 hover:bg-neutral-800 focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-400"
+                >
+                  Save here instead
+                </button>
+              </>
             )}
-          </Pane>
+          </div>
+          <GuideButton />
+          {/* written by the build (scripts/license-notices.ts) */}
+          <a
+            href="licenses.txt"
+            target="_blank"
+            rel="noopener"
+            className="shrink-0 rounded px-1 text-xs text-neutral-400 underline-offset-2 hover:text-neutral-100 hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-400"
+          >
+            Licenses
+          </a>
+          <ShareButton editor={editorView} />
+        </header>
 
-          {/* One height for every kind (the add form for a custom stage is
-              the tallest), and there before the parser loads, so selecting a
-              node never moves the panes around it; at larger text sizes the
-              pane scrolls instead. */}
-          <Pane label="Stage" className="h-[9.25rem] shrink-0 border-b border-neutral-800">
-            <div className="h-full overflow-y-auto">
-              <StagePane
-                selected={selected}
-                edits={edits}
-                adding={adding}
-                onCancelAdd={onCancelAdd}
-                onAdded={onAdded}
-              />
+        {/* The guide's drawer lies over the panes, inside this box: opening it
+            moves no pane, and on narrow screens it stays put while they scroll. */}
+        <div className="relative flex min-h-0 flex-1 flex-col">
+          {/* Two columns from md up. Narrower, one column of fixed-height panes
+              that scrolls as a page, so no pane is squeezed to a sliver. */}
+          <main className="grid min-h-0 flex-1 grid-cols-1 overflow-y-auto md:grid-cols-[minmax(0,2fr)_minmax(0,3fr)] md:overflow-hidden">
+            <div className="flex flex-col border-neutral-800 max-md:border-b md:min-h-0 md:border-r">
+              <Pane label="Input JSON" className="h-40 border-b border-neutral-800 max-md:shrink-0 md:h-auto md:flex-1">
+                <InputPane />
+              </Pane>
+              <Pane label="jq filter" className="h-40 max-md:shrink-0 md:h-auto md:flex-1">
+                <JqEditor viewRef={editorView} />
+              </Pane>
             </div>
-          </Pane>
 
-          <Pane label="Output" className="h-96 max-md:shrink-0 md:h-auto md:flex-1">
-            <OutputPane source={source} input={input} model={model} previews={previews} selected={selected} />
-          </Pane>
+            <div className="flex flex-col md:min-h-0">
+              <Pane label="Pipeline" className="h-80 border-b border-neutral-800 max-md:shrink-0 md:h-auto md:flex-1">
+                {model ? (
+                  <PipelineCanvas
+                    model={model}
+                    results={previews.results}
+                    running={previews.running}
+                    selectedId={selected?.id ?? null}
+                    onSelect={onSelect}
+                    edits={edits}
+                    onAddAfter={onAddAfter}
+                    focusRequest={focusRequest}
+                  />
+                ) : parser.status === 'error' ? (
+                  <p className="p-3 font-mono text-sm text-red-400">Parser failed to load: {parser.message}</p>
+                ) : (
+                  <p className="p-3 font-mono text-sm text-neutral-400">Loading parser…</p>
+                )}
+              </Pane>
+
+              {/* One height for every kind (the add form for a custom stage is
+                  the tallest), and there before the parser loads, so selecting a
+                  node never moves the panes around it; at larger text sizes the
+                  pane scrolls instead. */}
+              <Pane label="Stage" className="h-[9.25rem] shrink-0 border-b border-neutral-800">
+                <div className="h-full overflow-y-auto">
+                  <StagePane
+                    selected={selected}
+                    edits={edits}
+                    adding={adding}
+                    onCancelAdd={onCancelAdd}
+                    onAdded={onAdded}
+                  />
+                </div>
+              </Pane>
+
+              <Pane label="Output" className="h-96 max-md:shrink-0 md:h-auto md:flex-1">
+                <OutputPane source={source} input={input} model={model} previews={previews} selected={selected} />
+              </Pane>
+            </div>
+          </main>
+          <GuidePanel editor={editorView} />
         </div>
-      </main>
-    </div>
+      </div>
+    </GuideRoot>
   )
 }
 
