@@ -146,3 +146,35 @@ test('says so when the browser will not keep the document', async ({ page }) => 
   await preview(page, USERS, '.users | length')
   await expect(output(page)).toHaveText('2')
 })
+
+test.describe('leaving right after typing', () => {
+  /** Pretend the tab was hidden (switched away from, or closing). */
+  const hide = (page: Page) =>
+    page.evaluate(() => {
+      Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => 'hidden' })
+      document.dispatchEvent(new Event('visibilitychange'))
+    })
+
+  test('keeps the last keystrokes, still inside the debounces', async ({ page }) => {
+    await preview(page, USERS, '.users')
+    await expect.poll(() => saved(page, 'source')).toBe('.users')
+    // timers stop: neither the 200 ms reparse nor the 300 ms save can fire,
+    // so only leaving can save what comes next
+    await page.clock.install()
+    await page.clock.pauseAt(new Date('2030-01-01T00:00:00Z'))
+    await page.keyboard.type(' | length')
+    await hide(page)
+    await expect.poll(() => saved(page, 'source')).toBe('.users | length')
+  })
+
+  test('closing the tab right after typing keeps them too', async ({ page, context }) => {
+    await preview(page, USERS, '.users')
+    await expect.poll(() => saved(page, 'source')).toBe('.users')
+    await page.keyboard.type(' | length')
+    await page.close({ runBeforeUnload: true })
+
+    const again = await context.newPage()
+    await again.goto('/')
+    await expect(editorLines(again)).toHaveText(['.users | length'])
+  })
+})
