@@ -112,7 +112,7 @@ test('a share link pasted into an open tab replaces the jq, and Ctrl+Z brings it
   await page.evaluate((hash) => (location.hash = hash), new URL(link).hash)
   await expect(editorLines(page)).toHaveText(['.users | map(.age)'])
   await expect(node(page, 'map: map(.age)')).toBeVisible()
-  await expect(notice(page)).toContainText('Opened the shared link, replacing the jq and the input.')
+  await expect(notice(page)).toHaveText('Opened the shared link in place of your document.')
   expect(new URL(page.url()).hash).toBe('')
 
   await page.getByRole('textbox', { name: 'jq filter source' }).click()
@@ -176,5 +176,67 @@ test.describe('leaving right after typing', () => {
     const again = await context.newPage()
     await again.goto('/')
     await expect(editorLines(again)).toHaveText(['.users | length'])
+  })
+})
+
+test.describe('undoing a shared link', () => {
+  const undo = (page: Page) => page.getByRole('banner').getByRole('button', { name: 'Undo', exact: true })
+  const OTHER = '{"users": [{"name": "linus", "age": 54}]}'
+
+  test('opened at startup over a saved document: Undo brings it back, input too', async ({ page, browser, context }) => {
+    // a link made elsewhere, with its own jq and input
+    const elsewhere = await browser.newContext({ permissions: ['clipboard-read', 'clipboard-write'] })
+    const sender = await elsewhere.newPage()
+    await sender.goto('/')
+    await preview(sender, OTHER, '.users | length')
+    await expect(output(sender)).toHaveText('1')
+    const link = await share(sender)
+    await elsewhere.close()
+
+    await preview(page, USERS, '.users | map(.name)')
+    await expect.poll(() => saved(page, 'source')).toBe('.users | map(.name)')
+    const opened = await context.newPage()
+    await opened.goto(link)
+    await expect(editorLines(opened)).toHaveText(['.users | length'])
+    await expect(input(opened)).toHaveValue(OTHER)
+    await expect(notice(opened)).toHaveText('Opened the shared link in place of your document.')
+
+    await undo(opened).click()
+    await expect(editorLines(opened)).toHaveText(['.users | map(.name)'])
+    await expect(input(opened)).toHaveValue(USERS)
+    await expect(output(opened)).toHaveText(NAMES)
+    await expect(notice(opened)).toHaveText('Back to your document.')
+    await expect(undo(opened)).toHaveCount(0)
+    // and it is the saved document again
+    await expect.poll(() => saved(opened, 'input')).toBe(USERS)
+    await expect.poll(() => saved(opened, 'source')).toBe('.users | map(.name)')
+  })
+
+  test('pasted into an open tab: Undo puts back the jq and the input', async ({ page }) => {
+    await preview(page, OTHER, '.users | length')
+    const link = await share(page)
+    await preview(page, USERS, '.users | map(.name)')
+    await expect(output(page)).toHaveText(NAMES)
+
+    await page.evaluate((hash) => (location.hash = hash), new URL(link).hash)
+    await expect(input(page)).toHaveValue(OTHER)
+    await undo(page).click()
+    await expect(editorLines(page)).toHaveText(['.users | map(.name)'])
+    await expect(input(page)).toHaveValue(USERS)
+    // the jq came back as one editor step: Ctrl+Z returns to the link's
+    await page.getByRole('textbox', { name: 'jq filter source' }).click()
+    await page.keyboard.press('ControlOrMeta+z')
+    await expect(editorLines(page)).toHaveText(['.users | length'])
+  })
+
+  test('nothing to lose, so no Undo: a first visit', async ({ browser, page }) => {
+    await preview(page, OTHER, '.users | length')
+    const link = await share(page)
+    const fresh = await browser.newContext()
+    const visitor = await fresh.newPage()
+    await visitor.goto(link)
+    await expect(notice(visitor)).toHaveText('Opened the shared link.')
+    await expect(undo(visitor)).toHaveCount(0)
+    await fresh.close()
   })
 })
