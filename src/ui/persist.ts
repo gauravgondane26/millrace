@@ -52,7 +52,12 @@ async function openDocumentStore(): Promise<DocumentStore | null> {
         }
       },
       async save(field, value) {
-        await request(store('readwrite').put(value, field))
+        const tx = db.transaction(STORE, 'readwrite')
+        const put = request(tx.objectStore(STORE).put(value, field))
+        // commit now rather than when the task ends: a save made as the page
+        // unloads otherwise often dies with it
+        tx.commit?.()
+        await put
       },
     }
   } catch {
