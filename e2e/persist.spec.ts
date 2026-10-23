@@ -240,3 +240,45 @@ test.describe('undoing a shared link', () => {
     await fresh.close()
   })
 })
+
+test('two tabs: the one changed last saves, and the other says so', async ({ page, context }) => {
+  const elsewhere = (p: Page) => p.getByRole('banner').getByText('Open in another tab: changes here aren’t saved.')
+  const saveHere = (p: Page) => p.getByRole('banner').getByRole('button', { name: 'Save here instead', exact: true })
+  const typeAtEnd = async (p: Page, text: string) => {
+    await p.getByRole('textbox', { name: 'jq filter source' }).click()
+    await p.keyboard.press('ControlOrMeta+End')
+    await p.keyboard.type(text)
+  }
+
+  await preview(page, USERS, '.users')
+  await expect.poll(() => saved(page, 'source')).toBe('.users')
+
+  // opening a second tab changes nothing, so it claims nothing
+  const second = await context.newPage()
+  await second.goto('/')
+  await expect(editorLines(second)).toHaveText(['.users'])
+  await expect(elsewhere(page)).toHaveCount(0)
+  await expect(elsewhere(second)).toHaveCount(0)
+
+  // changing it in the second tab makes that one the tab that saves
+  await typeAtEnd(second, ' | length')
+  await expect.poll(() => saved(second, 'source')).toBe('.users | length')
+  await expect(elsewhere(page)).toBeVisible()
+  await expect(elsewhere(second)).toHaveCount(0)
+
+  // the first tab's changes no longer land over it
+  await typeAtEnd(page, ' | map(.name)')
+  await expect(editorLines(page)).toHaveText(['.users | map(.name)'])
+  await page.waitForTimeout(800) // past the save delay
+  expect(await saved(page, 'source')).toBe('.users | length')
+
+  // until it takes saving back
+  await saveHere(page).click()
+  await expect.poll(() => saved(page, 'source')).toBe('.users | map(.name)')
+  await expect(elsewhere(page)).toHaveCount(0)
+  await expect(elsewhere(second)).toBeVisible()
+
+  // a saving tab that closes lets the others save again
+  await page.close()
+  await expect(elsewhere(second)).toHaveCount(0)
+})
