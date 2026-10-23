@@ -6,6 +6,13 @@ import type { ParseJq } from '../core/parse/parser.ts'
 import { termCheck } from '../core/parse/term.ts'
 import { deleteNode, insertAfter, replaceArg, replaceNode, type TextChange } from '../core/splice/edits.ts'
 import { graphEditSpec } from '../core/splice/transaction.ts'
+import { useAppStore } from './store.ts'
+
+/**
+ * Said when an edit is refused: the node changed in the editor since the
+ * canvas drew it (typing commits after 200 ms), or is gone.
+ */
+export const STALE_EDIT = 'That stage changed as you typed, so the edit was not made. Try it again.'
 
 /** Edits made on the canvas. Each returns false if nothing was applied. */
 export interface GraphEdits {
@@ -37,7 +44,10 @@ export function useGraphEdits(editor: RefObject<EditorView | null>, parse: Parse
       if (!view || !parse) return false
       const source = view.state.doc.toString()
       const change = build(parse(source), source)
-      if (!change) return false
+      if (!change) {
+        useAppStore.getState().setNotice(STALE_EDIT)
+        return false
+      }
       view.dispatch(graphEditSpec(change))
       return true
     }
