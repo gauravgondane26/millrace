@@ -186,7 +186,11 @@ the app is done is the "Open issues" list below.
   `runPipeline` with the source node as identity, so invalid input surfaces on
   the input node. Results are per node id (ok, error, or blocked, naming the
   node whose error blocked it), cached including errors, and a newer edit
-  abandons the run in flight.
+  abandons the run in flight. Each result is published as it settles
+  (`runPipeline`'s `onResult`, batched once a frame), so a slow stage holds
+  back only itself and what follows; a node not settled yet keeps the
+  previous run's result for 250 ms (no "running…" flash on a quick edit),
+  then shows as running.
   Stage-by-stage previews equal the whole program except where a later stage
   reads `input`/`inputs` or `$__loc__`, or relies on stopping an earlier one
   early (`halt`, `error`); "Run full" (`src/ui/OutputPane.tsx`) is the exact jq
@@ -372,10 +376,6 @@ is resolved.
    `visibilitychange`/`pagehide` is asynchronous and doesn't include the editor's
    uncommitted text, so closing a tab right after typing can drop the last
    keystrokes.
-6. **Previews publish only when the whole pipeline is done.** `usePreviews`
-   sets results once `runPipeline` finishes, so one slow or endless stage
-   keeps every node, the input node included, at "running…" until it ends or
-   times out (10 s). Publishing each node's result as it lands would fix it.
 
 ### Toolchains on this machine
 
