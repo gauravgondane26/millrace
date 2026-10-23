@@ -158,3 +158,62 @@ test('F2 edits the selected node from the keyboard', async ({ page }) => {
   await field.press('Enter')
   await expect(editorLines(page)).toHaveText(['.users | map(.age)'])
 })
+
+test.describe('a canvas edit within 200 ms of typing', () => {
+  // The canvas draws from the text committed 200 ms after typing stops; a
+  // canvas edit in that window must splice the editor's live text at the
+  // node's live range. Freezing the page's timers holds the window open.
+  async function typeWithoutCommitting(page: Page, keys: () => Promise<void>) {
+    await page.clock.install()
+    await page.clock.pauseAt(new Date('2030-01-01T00:00:00Z'))
+    await page.getByRole('textbox', { name: 'jq filter source' }).click()
+    await keys()
+  }
+  const notice = (page: Page) => page.getByRole('banner').getByRole('status')
+
+  test('text typed before the node moved it: the edit follows', async ({ page }) => {
+    await preview(page, USERS, '.users | map(.name)')
+    await expect(output(page)).toHaveText(NAMES)
+    await typeWithoutCommitting(page, async () => {
+      await page.keyboard.press('ControlOrMeta+Home')
+      await page.keyboard.type('. | ')
+    })
+    // the canvas still shows the old text, and the edit lands in the new
+    await node(page, 'map: map(.name)').click()
+    await action(page, 'Delete map(.name)').click()
+    await expect(editorLines(page)).toHaveText(['. | .users'])
+    await expect(notice(page)).toBeEmpty()
+  })
+
+  test('text typed after the node: a stage added after it goes in between', async ({ page }) => {
+    await preview(page, USERS, '.users | map(.name)')
+    await expect(output(page)).toHaveText(NAMES)
+    await typeWithoutCommitting(page, async () => {
+      await page.keyboard.press('ControlOrMeta+End')
+      await page.keyboard.type(' | length')
+    })
+    await node(page, 'map: map(.name)').click()
+    await addStage(page, 'map(.name)', 'unique')
+    await expect(editorLines(page)).toHaveText(['.users | map(.name) | unique | length'])
+  })
+
+  test('the node itself changed: the edit is refused, and says so', async ({ page }) => {
+    await preview(page, USERS, '.users | map(.name)')
+    await expect(output(page)).toHaveText(NAMES)
+    await typeWithoutCommitting(page, async () => {
+      await page.keyboard.press('ControlOrMeta+End')
+      await page.keyboard.press('Backspace')
+      await page.keyboard.type('.age)')
+    })
+    await node(page, 'map: map(.name)').click()
+    await action(page, 'Delete map(.name)').click()
+    await expect(editorLines(page)).toHaveText(['.users | map(.name.age)'])
+    await expect(notice(page)).toHaveText('That stage changed as you typed, so the edit was not made. Try it again.')
+
+    // once the text commits, the canvas shows the node as it is, and it can go
+    await page.clock.resume()
+    await node(page, 'map: map(.name.age)').click()
+    await action(page, 'Delete map(.name.age)').click()
+    await expect(editorLines(page)).toHaveText(['.users'])
+  })
+})
