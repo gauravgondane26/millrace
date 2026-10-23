@@ -5,6 +5,7 @@ import type { GraphModel, GraphNode } from '../core/parse/model.ts'
 import { compileErrors, describeCompileErrors } from '../core/eval/diagnose.ts'
 import { EngineError, formatInWorker, PREVIEW_OUTPUT_LIMIT, runInWorker, type RunOutput } from '../worker/client.ts'
 import { errorText, messageOf } from './errors.ts'
+import { TextView } from './TextView.tsx'
 import { kindLabel, nodeLabel, summarize } from './summary.ts'
 import type { Previews } from './usePreviews.ts'
 
@@ -34,7 +35,8 @@ export function OutputPane({ source, input, model, previews, selected: node }: P
 
   let shown: Shown
   let caption = ''
-  if (input.trim() === '') {
+  const blank = !/\S/.test(input) // trim() would copy a 50 MB input on every render
+  if (blank) {
     shown = { kind: 'hint', text: 'Paste JSON on the left to see output.' }
   } else if (full.state.status !== 'idle') {
     caption = 'Whole program on the whole input'
@@ -83,11 +85,12 @@ export function OutputPane({ source, input, model, previews, selected: node }: P
         <button
           type="button"
           onClick={full.run}
-          disabled={input.trim() === '' || full.state.status === 'running'}
+          disabled={blank || full.state.status === 'running'}
           className="shrink-0 rounded border border-neutral-500 px-2 py-0.5 text-xs text-neutral-100 hover:bg-neutral-800 focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-400 disabled:opacity-40"
         >
           Run full
         </button>
+        <CopyButton text={shown.kind === 'output' ? pretty : null} />
       </div>
       <div className="min-h-0 flex-1">
         {shown.kind === 'hint' && <Hint>{shown.text}</Hint>}
@@ -101,9 +104,7 @@ export function OutputPane({ source, input, model, previews, selected: node }: P
           (shown.text === '' ? (
             <Hint>No output (the filter produced an empty stream).</Hint>
           ) : (
-            <pre tabIndex={0} className={`${scrollable} text-neutral-100`}>
-              {pretty}
-            </pre>
+            <TextView text={pretty} className="text-neutral-100" />
           ))}
       </div>
       {/* Always rendered, even empty: a live region must exist before its
@@ -183,4 +184,34 @@ function fullRunError(e: unknown, source: string): string {
 
 function Hint({ children }: { children: ReactNode }) {
   return <div className="p-3 font-mono text-sm text-neutral-400">{children}</div>
+}
+
+/**
+ * Copies the output shown. The view draws only the lines on screen, so
+ * selecting by hand can't take a long output whole; this can.
+ */
+function CopyButton({ text }: { text: string | null }) {
+  const [copied, setCopied] = useState<string | null>(null)
+  useEffect(() => {
+    if (copied === null) return
+    const timer = setTimeout(() => setCopied(null), 1500)
+    return () => clearTimeout(timer)
+  }, [copied])
+  return (
+    <button
+      type="button"
+      disabled={!text}
+      onClick={() => {
+        if (!text) return
+        navigator.clipboard.writeText(text).then(
+          () => setCopied('Copied'),
+          () => setCopied('Copy failed'),
+        )
+      }}
+      className="w-20 shrink-0 rounded border border-neutral-500 px-2 py-0.5 text-xs text-neutral-100 hover:bg-neutral-800 focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-400 disabled:opacity-40"
+    >
+      {/* fixed width: the label changing doesn't move the buttons beside it */}
+      <span aria-live="polite">{copied ?? 'Copy'}</span>
+    </button>
+  )
 }

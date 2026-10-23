@@ -14,6 +14,9 @@ export const nodeLabel = (node: GraphNode) => (node.kind === 'source' ? 'input' 
 /** What the node is: its kind, or for a construction, "object" or "array". */
 export const kindLabel = (node: GraphNode) => node.construct?.shape ?? node.kind
 
+/** Longest preview a card carries; it shows far fewer characters. */
+const SUMMARY_CHARS = 200
+
 const counted = new WeakMap<NodeResult, number>()
 
 /** Outputs are one value per line, so values = newlines (memoized per result). */
@@ -36,6 +39,9 @@ export function summarize(result: NodeResult | undefined, running: boolean): Sum
   if (count === 0) return { tone: 'muted', text: 'no output' }
   // "+": cut here or upstream, so there are more values than counted
   const more = result.output.truncated || result.partial ? '+' : ''
-  const first = result.output.text.slice(0, result.output.text.indexOf('\n'))
+  // the card shows one line, cut short; a compact output's first line can be
+  // the whole megabyte, and would sit in the DOM and its accessible text
+  const text = result.output.text
+  const first = text.slice(0, Math.min(text.indexOf('\n'), SUMMARY_CHARS))
   return { tone: 'ok', text: `${count}${more} ${count === 1 ? 'value' : 'values'} · ${first}` }
 }
