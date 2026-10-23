@@ -26,6 +26,13 @@ interface AppState {
 
   /** A one-line message in the header: a shared link opened, saving failed, ... */
   notice: string | null
+  /**
+   * Another tab saves the document (it changed it last), so this tab's
+   * changes aren't saved until it takes saving back (ui/persist).
+   */
+  savingElsewhere: boolean
+  setSavingElsewhere: (next: boolean) => void
+
   /** A button offered with the notice, by what it does; cleared with it. */
   noticeAction: NoticeAction | null
   setNotice: (next: string | null, action?: NoticeAction | null) => void
@@ -41,6 +48,8 @@ export const useAppStore = create<AppState>((set) => ({
   setInputText: (next) => set({ inputText: next }),
   selectedNodeId: null,
   selectNode: (id) => set({ selectedNodeId: id }),
+  savingElsewhere: false,
+  setSavingElsewhere: (next) => set({ savingElsewhere: next }),
   notice: null,
   noticeAction: null,
   setNotice: (next, action = null) => set({ notice: next, noticeAction: action }),

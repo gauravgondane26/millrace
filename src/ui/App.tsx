@@ -5,7 +5,7 @@ import type { GraphNode } from '../core/parse/model.ts'
 import { InputPane } from './InputPane.tsx'
 import { JqEditor } from './JqEditor.tsx'
 import { OutputPane } from './OutputPane.tsx'
-import { restorePrevious } from './persist.ts'
+import { restorePrevious, saveHere } from './persist.ts'
 import { PipelineCanvas } from './PipelineCanvas.tsx'
 import { ShareButton } from './Share.tsx'
 import { StagePane, type Adding } from './StagePane.tsx'
@@ -54,6 +54,7 @@ export function App() {
   useEditorDiagnostics(editorView, source, model, previews.results)
   const notice = useAppStore((s) => s.notice)
   const noticeAction = useAppStore((s) => s.noticeAction)
+  const savingElsewhere = useAppStore((s) => s.savingElsewhere)
   const setNotice = useAppStore((s) => s.setNotice)
 
   // The selected node, or the last one: the program's result.
@@ -119,6 +120,22 @@ export function App() {
             ×
           </button>
         )}
+        {/* Its own live region, always there, apart from the notice: it lasts
+            as long as another tab saves, whatever notices come and go. */}
+        <div aria-live="polite" className="flex shrink-0 items-center gap-2 text-xs text-amber-300">
+          {savingElsewhere && (
+            <>
+              <span>Open in another tab: changes here aren’t saved.</span>
+              <button
+                type="button"
+                onClick={saveHere}
+                className="rounded border border-neutral-500 px-2 py-0.5 text-neutral-100 hover:bg-neutral-800 focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-400"
+              >
+                Save here instead
+              </button>
+            </>
+          )}
+        </div>
         {/* written by the build (scripts/license-notices.ts) */}
         <a
           href="licenses.txt"

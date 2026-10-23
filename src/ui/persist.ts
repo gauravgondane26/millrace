@@ -69,6 +69,21 @@ async function openDocumentStore(): Promise<DocumentStore | null> {
 }
 
 /**
+ * Tabs open on the document agree which one saves it, over a BroadcastChannel
+ * (messages between tabs; nothing is stored): the tab that changed it last.
+ * A change claims saving and tells the others, which stop saving and say so
+ * (store `savingElsewhere`) until they take it back (`saveHere`). Restoring
+ * the saved document at startup changes nothing, so opening a tab claims
+ * nothing; a saving tab that closes releases it.
+ */
+type Message = { type: 'claim' | 'release'; tab: string }
+const CHANNEL = 'millrace-document'
+
+/** Take saving back from another tab: this tab's document is saved at once. */
+let takeOver: (() => void) | null = null
+export const saveHere = () => takeOver?.()
+
+/**
  * Saves the jq and the input as they change, once typing pauses, and right
  * away when the page is hidden (the last chance before a tab closes).
  *
@@ -77,7 +92,7 @@ async function openDocumentStore(): Promise<DocumentStore | null> {
  * debounce on those same events (JqEditor), and that change may reach the
  * store after this file's own listener has already flushed.
  */
-function startAutosave(db: DocumentStore) {
+function startAutosave(db: DocumentStore, stored: Partial<Record<Field, string>>) {
   const onError = () => useAppStore.getState().setNotice(NOTICES.saveFailed)
   const pending = new Map<Field, string>()
   let timer: ReturnType<typeof setTimeout> | undefined
@@ -87,11 +102,50 @@ function startAutosave(db: DocumentStore) {
     for (const [field, value] of pending) db.save(field, value).catch(onError)
     pending.clear()
   }
+
+  const tab = Math.random().toString(36).slice(2)
+  const channel = typeof BroadcastChannel === 'undefined' ? null : new BroadcastChannel(CHANNEL)
+  /** `idle` until this tab changes the document; `passive` once another tab did since. */
+  let role: 'idle' | 'saving' | 'passive' = 'idle'
+  const post = (type: Message['type']) => channel?.postMessage({ type, tab } satisfies Message)
+  const claim = () => {
+    if (role === 'saving') return
+    role = 'saving'
+    post('claim')
+    useAppStore.getState().setSavingElsewhere(false)
+  }
+  if (channel) {
+    channel.onmessage = (e: MessageEvent<Message>) => {
+      if (e.data.tab === tab) return
+      if (e.data.type === 'claim') {
+        // what this tab hasn't saved yet would land over the other tab's work
+        role = 'passive'
+        clearTimeout(timer)
+        pending.clear()
+        useAppStore.getState().setSavingElsewhere(true)
+      } else if (role === 'passive') {
+        role = 'idle'
+        useAppStore.getState().setSavingElsewhere(false)
+      }
+    }
+  }
+
   const queue = (field: Field, value: string) => {
+    if (value === stored[field]) return // as saved: restoring, say, changes nothing
+    stored[field] = value
+    if (role === 'passive') return
+    claim()
     pending.set(field, value)
     clearTimeout(timer)
     if (leaving || document.visibilityState === 'hidden') flush()
     else timer = setTimeout(flush, SAVE_DELAY_MS)
+  }
+  takeOver = () => {
+    claim()
+    const { source, inputText } = useAppStore.getState()
+    pending.set('source', source)
+    pending.set('input', inputText)
+    flush()
   }
   useAppStore.subscribe((state, prev) => {
     if (state.source !== prev.source) queue('source', state.source)
@@ -103,9 +157,13 @@ function startAutosave(db: DocumentStore) {
   window.addEventListener('pagehide', () => {
     leaving = true
     flush()
+    if (role === 'saving') post('release')
   })
-  // back from the back/forward cache: the page lives on
-  window.addEventListener('pageshow', () => (leaving = false))
+  window.addEventListener('pageshow', (e) => {
+    // back from the back/forward cache: the page lives on, without the claim
+    leaving = false
+    if (e.persisted && role === 'saving') role = 'idle'
+  })
 }
 
 /** Drops a share link's fragment once read, so a reload doesn't reopen it over newer work. */
@@ -182,7 +240,7 @@ export function restoreDocument(): Promise<void> {
     if (shared.status !== 'none') clearShareHash()
 
     // following the store from here saves a shared document as the working one
-    if (db) startAutosave(db)
+    if (db) startAutosave(db, { ...saved })
 
     const doc = shared.status === 'ok' ? { ...saved, source: shared.doc.source, ...inputOf(shared.doc) } : saved
     const kept = shared.status === 'ok' && keepPrevious(saved, shared.doc)
