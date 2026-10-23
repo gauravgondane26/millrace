@@ -67,7 +67,18 @@ export function JqEditor({ viewRef }: { viewRef?: MutableRefObject<EditorView | 
     })
     if (viewRef) viewRef.current = view
 
+    // Leaving the page: commit what is still inside the debounce, so the
+    // autosave (ui/persist) keeps the last keystrokes.
+    const commitPending = () => {
+      if (timer !== undefined) commit(view)
+    }
+    const onVisibility = () => document.visibilityState === 'hidden' && commitPending()
+    document.addEventListener('visibilitychange', onVisibility)
+    window.addEventListener('pagehide', commitPending)
+
     return () => {
+      document.removeEventListener('visibilitychange', onVisibility)
+      window.removeEventListener('pagehide', commitPending)
       if (timer !== undefined) commit(view)
       if (viewRef?.current === view) viewRef.current = null
       view.destroy()

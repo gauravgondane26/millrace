@@ -64,11 +64,17 @@ async function openDocumentStore(): Promise<DocumentStore | null> {
 /**
  * Saves the jq and the input as they change, once typing pauses, and right
  * away when the page is hidden (the last chance before a tab closes).
+ *
+ * While the page is hidden or unloading, a change is saved at once rather
+ * than after the pause: the editor commits the text still inside its reparse
+ * debounce on those same events (JqEditor), and that change may reach the
+ * store after this file's own listener has already flushed.
  */
 function startAutosave(db: DocumentStore) {
   const onError = () => useAppStore.getState().setNotice(NOTICES.saveFailed)
   const pending = new Map<Field, string>()
   let timer: ReturnType<typeof setTimeout> | undefined
+  let leaving = false
   const flush = () => {
     clearTimeout(timer)
     for (const [field, value] of pending) db.save(field, value).catch(onError)
@@ -77,7 +83,8 @@ function startAutosave(db: DocumentStore) {
   const queue = (field: Field, value: string) => {
     pending.set(field, value)
     clearTimeout(timer)
-    timer = setTimeout(flush, SAVE_DELAY_MS)
+    if (leaving || document.visibilityState === 'hidden') flush()
+    else timer = setTimeout(flush, SAVE_DELAY_MS)
   }
   useAppStore.subscribe((state, prev) => {
     if (state.source !== prev.source) queue('source', state.source)
@@ -86,7 +93,12 @@ function startAutosave(db: DocumentStore) {
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'hidden') flush()
   })
-  window.addEventListener('pagehide', flush)
+  window.addEventListener('pagehide', () => {
+    leaving = true
+    flush()
+  })
+  // back from the back/forward cache: the page lives on
+  window.addEventListener('pageshow', () => (leaving = false))
 }
 
 /** Drops a share link's fragment once read, so a reload doesn't reopen it over newer work. */
