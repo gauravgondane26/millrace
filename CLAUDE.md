@@ -112,6 +112,7 @@ src/
     splice/      graph edit -> text range replacement
     eval/        dirty marking, cache, worker RPC
     persist/     share-link encoding (IndexedDB itself lives in ui/persist.ts)
+    guide/       the in-app guide's sections and examples, as data
   ui/            React components, dumb where possible
   worker/        jq wasm host
 ```
@@ -152,6 +153,9 @@ code-splitting (see Big inputs); license notices (see Bundle); a 1 GB jq heap,
 so Run full handles a 50 MB input (see Engine limits). The app is dark only,
 which the user accepted as the quality bar's "Dark mode". Every open issue
 recorded through Phase 9 is resolved (see Open issues).
+
+**Guide done.** An in-app guide teaches the app to people who know some jq,
+each section with an example to try (see Guide).
 
 - **Execution.** `src/worker/engine.ts` drives jq 1.8.2 itself (the `jq-wasm`
   package, pinned exactly), so previews are what jq produces. The engine was
@@ -268,7 +272,8 @@ recorded through Phase 9 is resolved (see Open issues).
   refused, the link is shown to copy by hand. Opening a link at startup wins
   over the saved document and becomes the working one; the fragment is then
   cleared, so a reload keeps later edits. A link pasted into a tab already
-  open only fires `hashchange` (`src/ui/useSharedLinks.ts`): its jq goes
+  open only fires `hashchange` (`src/ui/useSharedLinks.ts`), and opens
+  through `openDocument` (as guide examples do): its jq goes
   through the editor as one undoable step (`openSpec`, committed at once like
   undo); its input replaces the input pane. Either way the document a link
   replaces is kept in memory for the session (`keepPrevious`), and the
@@ -370,6 +375,21 @@ recorded through Phase 9 is resolved (see Open issues).
   always present. A card's status line has a fixed height, and its edge
   handles sit a fixed 34 px from its top, so a selected card growing its
   buttons moves no edge.
+- **Guide.** `src/ui/Guide.tsx` is a non-modal drawer (Radix Dialog,
+  `modal={false}`) opened by the header's Guide button or the empty Output
+  pane's "Open the guide" (store `guideOpen`; nothing saved). It lies over
+  the right edge of the panes, inside a positioned box around `<main>`
+  (full width below `md`), so it moves no pane and leaves the header's
+  notice visible. Working beside it doesn't close it; Escape does only with
+  focus in it, so Escape in the editor or a field keeps its meaning. The
+  content is data in `core/guide/sections.ts`: eight sections and a jq
+  cheat sheet, paragraphs as plain strings with backticked code. **Every
+  example carries `expect`** (jq's compact output, or a compile error
+  substring), and `worker/guide.test.ts` runs each through the real jq;
+  `sections.test.ts` checks what each draws. Try it opens the example
+  through `openDocument` (`ui/persist.ts`, shared with share links): one
+  undoable step, and Undo in the notice. `e2e/guide.spec.ts` covers it.
+  Design: `docs/plans/2026-10-23-guide-design.md`.
 
 ### Open issues (address all before calling the app done)
 
