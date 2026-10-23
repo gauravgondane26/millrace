@@ -100,6 +100,10 @@ test('a 50 MB paste never blocks the page for long', async ({ page }) => {
   await page.keyboard.press('End')
   await page.keyboard.type(' + 1')
   await expect(node(page, 'custom: length + 1')).toContainText('1 value · 51')
+  // the whole program on the whole 50 MB: jq has 1 GB here (256 MB stock)
+  await page.getByRole('button', { name: 'Run full', exact: true }).click()
+  await expect(outputPane(page)).toContainText('Whole program on the whole input')
+  await expect(output(page)).toHaveText('51', { timeout: 30_000 })
   const longest = await page.evaluate(() => Math.max(0, ...(window as unknown as { tasks: number[] }).tasks))
   // a frame is 16 ms; the textarea used to take 6 s or more
   expect(longest).toBeLessThan(250)
@@ -121,4 +125,19 @@ test('a long output draws only what is on screen, and copies whole', async ({ pa
   await expect(page.getByRole('button', { name: 'Copied', exact: true })).toBeVisible()
   const copied = await page.evaluate(() => navigator.clipboard.readText())
   expect(copied.split('\n')).toHaveLength(100_002) // "[", 100,000 values, "]"
+})
+
+test('a full run can be stopped', async ({ page }) => {
+  await preview(page, '1', 'until(false; .)')
+  // an edit returns to previews, so let the jq and the input (debounced
+  // 250 ms) commit first; previews can't show it, as they publish once the
+  // whole pipeline is done and this stage never is
+  await expect(node(page, 'custom: until(false; .)')).toBeVisible()
+  await page.waitForTimeout(300)
+  await page.getByRole('button', { name: 'Run full', exact: true }).click()
+  await expect(outputPane(page)).toContainText('Running the whole program…')
+  await page.getByRole('button', { name: 'Stop', exact: true }).click()
+  // back to the preview, which the 10 s preview timeout ends on its own
+  await expect(page.getByRole('button', { name: 'Run full', exact: true })).toBeVisible()
+  await expect(outputPane(page)).not.toContainText('Running the whole program…')
 })
