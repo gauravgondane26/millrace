@@ -3,7 +3,7 @@ import { SAMPLE_ITEMS } from '../core/eval/sample.ts'
 import { locate } from '../core/parse/graph.ts'
 import type { GraphModel, GraphNode } from '../core/parse/model.ts'
 import { compileErrors, describeCompileErrors } from '../core/eval/diagnose.ts'
-import { EngineError, formatInWorker, PREVIEW_OUTPUT_LIMIT, runInWorker, type RunOutput } from '../worker/client.ts'
+import { EngineError, formatInWorker, FULL_RUN_TIMEOUT_MS, PREVIEW_OUTPUT_LIMIT, runInWorker, type RunOutput } from '../worker/client.ts'
 import { errorText, messageOf } from './errors.ts'
 import { TextView } from './TextView.tsx'
 import { kindLabel, nodeLabel, summarize } from './summary.ts'
@@ -84,11 +84,12 @@ export function OutputPane({ source, input, model, previews, selected: node }: P
         <span className="min-w-0 flex-1 truncate font-mono text-xs text-neutral-400">{caption}</span>
         <button
           type="button"
-          onClick={full.run}
-          disabled={blank || full.state.status === 'running'}
-          className="shrink-0 rounded border border-neutral-500 px-2 py-0.5 text-xs text-neutral-100 hover:bg-neutral-800 focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-400 disabled:opacity-40"
+          onClick={full.state.status === 'running' ? full.stop : full.run}
+          disabled={blank}
+          // fixed width: switching to Stop doesn't move the buttons beside it
+          className="w-20 shrink-0 rounded border border-neutral-500 px-2 py-0.5 text-xs text-neutral-100 hover:bg-neutral-800 focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-400 disabled:opacity-40"
         >
-          Run full
+          {full.state.status === 'running' ? 'Stop' : 'Run full'}
         </button>
         <CopyButton text={shown.kind === 'output' ? pretty : null} />
       </div>
@@ -150,12 +151,17 @@ function useFullRun(source: string, input: string) {
     const controller = new AbortController()
     inFlight.current = controller
     setState({ status: 'running' })
-    runInWorker(source, input, PREVIEW_OUTPUT_LIMIT, controller.signal).then(
+    runInWorker(source, input, PREVIEW_OUTPUT_LIMIT, controller.signal, FULL_RUN_TIMEOUT_MS).then(
       (output) => !controller.signal.aborted && setState({ status: 'done', output }),
       (e: unknown) => !controller.signal.aborted && setState({ status: 'error', message: fullRunError(e, source) }),
     )
   }
-  return { state, run }
+  // back to previews; the worker still busy with it is dropped (client.ts)
+  const stop = () => {
+    inFlight.current?.abort()
+    setState({ status: 'idle' })
+  }
+  return { state, run, stop }
 }
 
 /**
