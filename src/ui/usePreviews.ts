@@ -28,7 +28,7 @@ export function usePreviews(model: GraphModel | null, input: string): Previews {
   const cache = useRef(createCache())
 
   useEffect(() => {
-    if (input.trim() === '') {
+    if (!/\S/.test(input)) {
       setSample(null)
       return
     }

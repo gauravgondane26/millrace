@@ -2,6 +2,7 @@ import type { EditorView } from '@codemirror/view'
 import { useCallback, useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react'
 import { locate } from '../core/parse/graph.ts'
 import type { GraphNode } from '../core/parse/model.ts'
+import { InputPane } from './InputPane.tsx'
 import { JqEditor } from './JqEditor.tsx'
 import { OutputPane } from './OutputPane.tsx'
 import { PipelineCanvas } from './PipelineCanvas.tsx'
@@ -33,7 +34,6 @@ export function App() {
   // Already debounced by the editor (invariant 6); only the input needs it here.
   const source = useAppStore((s) => s.source)
   const inputText = useAppStore((s) => s.inputText)
-  const setInputText = useAppStore((s) => s.setInputText)
   const input = useDebounced(inputText, 250)
 
   // The graph model is derived from the source, never stored (invariant 1).
@@ -116,14 +116,7 @@ export function App() {
       <main className="grid min-h-0 flex-1 grid-cols-1 overflow-y-auto md:grid-cols-[minmax(0,2fr)_minmax(0,3fr)] md:overflow-hidden">
         <div className="flex flex-col border-neutral-800 max-md:border-b md:min-h-0 md:border-r">
           <Pane label="Input JSON" className="h-40 border-b border-neutral-800 max-md:shrink-0 md:h-auto md:flex-1">
-            <textarea
-              aria-label="Input JSON"
-              spellCheck={false}
-              value={inputText}
-              onChange={(e) => setInputText(e.target.value)}
-              placeholder='{"users": [{"name": "ada"}]}'
-              className="h-full w-full resize-none bg-neutral-900 p-3 font-mono text-sm text-neutral-100 outline-none placeholder:text-neutral-400 focus-visible:outline focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-blue-400"
-            />
+            <InputPane />
           </Pane>
           <Pane label="jq filter" className="h-40 max-md:shrink-0 md:h-auto md:flex-1">
             <JqEditor viewRef={editorView} />
