@@ -248,7 +248,9 @@ the app is done is the "Open issues" list below.
 - **Persistence (Phase 8).** `src/ui/persist.ts` keeps the jq and the input in
   IndexedDB (database `millrace`, store `document`, keys `source` and `input`,
   separate so typing jq never rewrites a big input), saved 300 ms after a change
-  and at once when the page is hidden. `src/ui/Boot.tsx` restores before the
+  and at once when the page is hidden or unloading: then `JqEditor` also
+  commits the text still inside its 200 ms debounce, and any change saves
+  immediately, so closing a tab right after typing keeps the last keystrokes. `src/ui/Boot.tsx` restores before the
   app renders ("Opening your document…"), so the editor starts from the saved
   text with no undo step for it and the default `.` is never saved over it.
   Share (`src/ui/Share.tsx`) copies `#v1=<lz-string>` (`core/persist/share.ts`):
@@ -371,11 +373,6 @@ is resolved.
    sooner. Settle the limit, or offer the longer link with a warning.
 4. **Several tabs overwrite each other.** Each tab saves its own document to the
    same IndexedDB records, and the last save wins, with no warning.
-5. **The last moments of typing can be lost on close.** Saves wait 300 ms, and
-   jq edits reach the store only after the 200 ms reparse debounce. The save on
-   `visibilitychange`/`pagehide` is asynchronous and doesn't include the editor's
-   uncommitted text, so closing a tab right after typing can drop the last
-   keystrokes.
 
 ### Toolchains on this machine
 
