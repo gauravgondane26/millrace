@@ -50,13 +50,15 @@ test('the Stage pane is one height for every kind, and the add form', async ({ p
 test('a notice appearing does not move the output', async ({ page }) => {
   await preview(page, '[1, 2, 3]', 'length')
   await expect(output(page)).toHaveText('3')
-  const before = await box(output(page))
+  // the output's view (its text is drawn inside, as wide as the text)
+  const view = output(page).locator('xpath=../..')
+  const before = await box(view)
 
   // big enough to be sampled, so the notice appears
   await page.getByRole('textbox', { name: 'Input JSON' }).fill(JSON.stringify(Array.from({ length: 500 }, (_, i) => i)))
   await expect(outputPane(page).getByRole('status')).toContainText('Previewing a sample')
   await expect(output(page)).toHaveText('200')
-  expect(await box(output(page))).toEqual(before)
+  expect(await box(view)).toEqual(before)
 })
 
 test('cards keep their height as previews arrive, and edges stay put on select', async ({ page }) => {
