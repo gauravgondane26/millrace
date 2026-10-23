@@ -76,3 +76,35 @@ test('cards keep their height as previews arrive, and edges stay put on select',
   await expect(page.getByRole('button', { name: 'Edit .users', exact: true })).toBeVisible()
   expect(await edges.evaluateAll((all) => all.map((e) => e.getAttribute('d')))).toEqual(paths)
 })
+
+test('a chain wider than the canvas keeps the selected result in view', async ({ page }) => {
+  await preview(page, USERS, '.users | map(.age) | sort | unique | first | tostring | length')
+  const canvas = await box(page.getByRole('region', { name: 'Pipeline' }).locator('.react-flow'))
+  const last = node(page, 'custom: length')
+  await expect(last).toContainText('1 value')
+  // the result, selected by default, is whole on screen, not cut at the edge
+  await expect(async () => {
+    const card = await box(last)
+    expect(card.x).toBeGreaterThanOrEqual(canvas.x)
+    expect(card.x + card.width).toBeLessThanOrEqual(canvas.x + canvas.width)
+  }).toPass()
+})
+
+test.describe('on a phone', () => {
+  test.use({ viewport: { width: 390, height: 844 } })
+
+  test('panes stack in one column and keep their height', async ({ page }) => {
+    await preview(page, USERS, '.users | map(.name)')
+    await expect(node(page, 'map: map(.name)')).toContainText('1 value')
+    const names = ['Input JSON', 'jq filter', 'Pipeline', 'Stage', 'Output']
+    const boxes = []
+    for (const name of names) boxes.push(await box(page.getByRole('region', { name })))
+    for (let i = 0; i < boxes.length; i++) {
+      const b = boxes[i]!
+      expect(b.width, names[i]).toBeGreaterThan(380)
+      if (i > 0) expect(b.y, names[i]).toBeGreaterThanOrEqual(boxes[i - 1]!.y + boxes[i - 1]!.height - 1)
+    }
+    expect(boxes[2]!.height, 'Pipeline').toBeGreaterThanOrEqual(300)
+    await page.screenshot({ path: `${SCREENS}/phone.png` })
+  })
+})
