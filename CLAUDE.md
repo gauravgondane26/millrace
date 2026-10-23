@@ -144,8 +144,10 @@ program on the whole input.
 
 **Phase 9 (quality bar) in progress.** Done: compile errors placed on their
 node and in the editor (see Errors); no layout shift (see Layout); keyboard,
-focus and contrast (see Accessibility); narrow screens. Left: 50 MB inputs (virtualized views, code-splitting), license notices,
-and last, our own jq build with a larger heap.
+focus and contrast (see Accessibility); narrow screens; big inputs and
+outputs, and code-splitting (see Big inputs). Left: license notices, and
+last, our own jq build with a larger heap (Run full on a 50 MB input still
+runs jq out of memory).
 
 - **Execution.** `src/worker/engine.ts` drives jq 1.8.2 itself (the `jq-wasm`
   package, pinned exactly), so previews are what jq produces. The engine was
@@ -284,10 +286,25 @@ and last, our own jq build with a larger heap.
   hold several hundred MB until the timeout). `$ENV`/`env` show Emscripten's
   placeholder environment, `input_filename` is `"/dev/stdin"`, modules
   (`import`/`include`) can't load, and nesting thousands of levels deep
-  overflows the wasm stack.
-- **Known rough edges.** The main
-  JS chunk is ~810 KB (246 KB gzipped): CodeMirror, React Flow and
-  web-tree-sitter; code-split it in the Quality-bar work.
+  overflows the wasm stack. `crashMessage` in `client.ts` names both in plain
+  words (jq-wasm says "Aborted()" and "memory access out of bounds").
+- **Big inputs (50 MB).** The browser's own textarea takes ~130 ms per MB to
+  take text in, so `src/ui/InputPane.tsx` edits input only up to
+  `EDITABLE_INPUT_LIMIT` (1 MB). Past it the input is shown (size and first
+  64 KB) and replaced by pasting, Open file… or dropping a file; a paste that
+  would cross the limit is caught before the browser inserts it. Never call
+  `.trim()` or similar on the input per render: it copies 50 MB. Output goes
+  through `src/ui/TextView.tsx`, which draws only the visible lines (fixed
+  20 px line height) and cuts a line past 5,000 characters; Copy takes the
+  whole text. Card summaries are capped at 200 characters. `e2e/big.spec.ts`
+  pastes 50 MB and fails on any main-thread task over 250 ms. Measured on the
+  production build: no task over 50 ms, first preview under a second, reload
+  with a 50 MB saved input shows the app in ~150 ms.
+- **Bundle.** `Boot` dynamic-imports the app, started in parallel with the
+  restore; `vite.config.ts` gives React, CodeMirror, React Flow and
+  web-tree-sitter chunks of their own (entry 10 KB, largest 313 KB).
+  Overrides of React Flow's CSS live in `src/ui/canvas.css`, imported right
+  after it: in `index.css` they would load before it and lose.
 - **Narrow screens.** The canvas fits the chain down to 70% zoom (readable
   beats complete), then pans just far enough that the selected node (by
   default the last, the result) is whole on screen; Tab focus pans to a node
