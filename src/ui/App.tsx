@@ -5,6 +5,7 @@ import type { GraphNode } from '../core/parse/model.ts'
 import { InputPane } from './InputPane.tsx'
 import { JqEditor } from './JqEditor.tsx'
 import { OutputPane } from './OutputPane.tsx'
+import { restorePrevious } from './persist.ts'
 import { PipelineCanvas } from './PipelineCanvas.tsx'
 import { ShareButton } from './Share.tsx'
 import { StagePane, type Adding } from './StagePane.tsx'
@@ -52,6 +53,7 @@ export function App() {
   // failed stages are marked in the editor too, where they can be fixed
   useEditorDiagnostics(editorView, source, model, previews.results)
   const notice = useAppStore((s) => s.notice)
+  const noticeAction = useAppStore((s) => s.noticeAction)
   const setNotice = useAppStore((s) => s.setNotice)
 
   // The selected node, or the last one: the program's result.
@@ -98,6 +100,15 @@ export function App() {
         <div role="status" className="min-w-0 flex-1 truncate text-right text-xs text-amber-300" title={notice ?? undefined}>
           {notice}
         </div>
+        {noticeAction === 'restorePrevious' && (
+          <button
+            type="button"
+            onClick={() => restorePrevious(editorView.current)}
+            className="shrink-0 rounded border border-neutral-500 px-2 py-0.5 text-xs text-neutral-100 hover:bg-neutral-800 focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-400"
+          >
+            Undo
+          </button>
+        )}
         {notice !== null && (
           <button
             type="button"

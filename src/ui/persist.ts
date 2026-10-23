@@ -1,4 +1,6 @@
+import type { EditorView } from '@codemirror/view'
 import { decodeShare } from '../core/persist/share.ts'
+import { openSpec } from '../core/splice/transaction.ts'
 import { useAppStore } from './store.ts'
 
 /**
@@ -114,11 +116,53 @@ export function clearShareHash() {
 export const NOTICES = {
   opened: 'Opened the shared link.',
   openedJqOnly: 'Opened the shared link: its jq, with your own input.',
+  replaced: 'Opened the shared link in place of your document.',
+  replacedJq: 'Opened the shared link’s jq in place of yours, keeping your input.',
+  restored: 'Back to your document.',
   unreadable: 'That link could not be read (it may have been cut short). Showing your last document.',
   noStorage: 'This browser is not letting millrace save, so your work lasts only until the tab closes.',
   saveFailed: 'Saving failed, so a reload may lose recent changes.',
 } as const
 
+
+/** A document as saved: its jq and its input, either of which may be missing. */
+interface Doc {
+  source?: string
+  input?: string
+}
+
+/**
+ * The document a shared link replaced, kept for this session so the
+ * notice's Undo can bring it back (the input pane has no undo of its own).
+ */
+let previous: Doc | null = null
+
+/**
+ * Keeps `current` for Undo before a shared document replaces it, unless
+ * there is nothing to lose; says whether it did.
+ */
+export function keepPrevious(current: Doc, shared: Doc): boolean {
+  const lost =
+    (current.source !== undefined && current.source !== shared.source) ||
+    (shared.input !== undefined && current.input !== undefined && current.input !== '' && current.input !== shared.input)
+  previous = lost ? current : null
+  return lost
+}
+
+/**
+ * Undo for opening a shared link: the jq goes back through the editor, as
+ * one undoable step like the opening was, and the input back into its pane.
+ */
+export function restorePrevious(view: EditorView | null) {
+  const doc = previous
+  if (!doc || !view) return
+  previous = null
+  const { setInputText, setNotice, selectNode } = useAppStore.getState()
+  if (doc.source !== undefined) view.dispatch(openSpec(view.state.doc, doc.source))
+  if (doc.input !== undefined) setInputText(doc.input)
+  selectNode(null)
+  setNotice(NOTICES.restored)
+}
 
 let restoring: Promise<void> | null = null
 
@@ -141,6 +185,7 @@ export function restoreDocument(): Promise<void> {
     if (db) startAutosave(db)
 
     const doc = shared.status === 'ok' ? { ...saved, source: shared.doc.source, ...inputOf(shared.doc) } : saved
+    const kept = shared.status === 'ok' && keepPrevious(saved, shared.doc)
     useAppStore.setState({
       ...(doc.source !== undefined ? { source: doc.source } : {}),
       ...(doc.input !== undefined ? { inputText: doc.input } : {}),
@@ -148,17 +193,21 @@ export function restoreDocument(): Promise<void> {
 
     const notice =
       shared.status === 'ok'
-        ? shared.doc.input === undefined
-          ? NOTICES.openedJqOnly
-          : NOTICES.opened
+        ? openedNotice(shared.doc, kept)
         : shared.status === 'invalid'
           ? NOTICES.unreadable
           : db
             ? null
             : NOTICES.noStorage
-    useAppStore.getState().setNotice(notice)
+    useAppStore.getState().setNotice(notice, kept ? 'restorePrevious' : null)
   })()
   return restoring
 }
 
 const inputOf = (doc: { input?: string }) => (doc.input === undefined ? {} : { input: doc.input })
+
+/** What opening a shared document says, given whether it replaced one (and so offers Undo). */
+export function openedNotice(shared: Doc, replaced: boolean): string {
+  if (shared.input === undefined) return replaced ? NOTICES.replacedJq : NOTICES.openedJqOnly
+  return replaced ? NOTICES.replaced : NOTICES.opened
+}

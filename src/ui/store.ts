@@ -26,8 +26,13 @@ interface AppState {
 
   /** A one-line message in the header: a shared link opened, saving failed, ... */
   notice: string | null
-  setNotice: (next: string | null) => void
+  /** A button offered with the notice, by what it does; cleared with it. */
+  noticeAction: NoticeAction | null
+  setNotice: (next: string | null, action?: NoticeAction | null) => void
 }
+
+/** `restorePrevious`: undo opening a shared link (ui/persist). */
+export type NoticeAction = 'restorePrevious'
 
 export const useAppStore = create<AppState>((set) => ({
   source: '.',
@@ -37,5 +42,6 @@ export const useAppStore = create<AppState>((set) => ({
   selectedNodeId: null,
   selectNode: (id) => set({ selectedNodeId: id }),
   notice: null,
-  setNotice: (next) => set({ notice: next }),
+  noticeAction: null,
+  setNotice: (next, action = null) => set({ notice: next, noticeAction: action }),
 }))
