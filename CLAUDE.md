@@ -145,8 +145,8 @@ program on the whole input.
 **Phase 9 (quality bar) in progress.** Done: compile errors placed on their
 node and in the editor (see Errors); no layout shift (see Layout); keyboard,
 focus and contrast (see Accessibility); narrow screens; big inputs and
-outputs, and code-splitting (see Big inputs). Left: license notices, and
-last, our own jq build with a larger heap (Run full on a 50 MB input still
+outputs, and code-splitting (see Big inputs); license notices (see Bundle).
+Left: last, our own jq build with a larger heap (Run full on a 50 MB input still
 runs jq out of memory).
 
 - **Execution.** `src/worker/engine.ts` drives jq 1.8.2 itself (the `jq-wasm`
@@ -305,6 +305,12 @@ runs jq out of memory).
   web-tree-sitter chunks of their own (entry 10 KB, largest 313 KB).
   Overrides of React Flow's CSS live in `src/ui/canvas.css`, imported right
   after it: in `index.css` they would load before it and lose.
+  `scripts/license-notices.ts` (a Vite plugin, also in `worker.plugins`)
+  writes `dist/licenses.txt`, linked from the header: every npm package with
+  code in the app or worker bundles, Tailwind, and the software compiled into
+  the wasm (texts in `licenses/`). A new dependency is picked up by itself;
+  software compiled into a new wasm needs an entry in `COMPILED_IN`. The file
+  exists only in builds, so the link 404s under `npm run dev`.
 - **Narrow screens.** The canvas fits the chain down to 70% zoom (readable
   beats complete), then pans just far enough that the selected node (by
   default the last, the result) is whole on screen; Tab focus pans to a node
