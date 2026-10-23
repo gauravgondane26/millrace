@@ -4,12 +4,18 @@ import { SAMPLE_ITEMS, type Sample } from '../core/eval/sample.ts'
 import type { GraphModel, GraphNode } from '../core/parse/model.ts'
 import { runFilterInWorker, sampleInWorker } from '../worker/client.ts'
 
+/** How long a node not yet settled in a run keeps the previous run's result. */
+const KEEP_PREVIOUS_MS = 250
+
 export interface Previews {
   /** The sample previews run on; null while there is no input. */
   sample: Sample | null
-  /** One result per graph node, by id; null until a run completes. */
+  /**
+   * One result per graph node, by id, published as each settles; null until
+   * the first does. A node missing from it is still running.
+   */
   results: ReadonlyMap<string, NodeResult> | null
-  /** A run is in flight; `results` may still be the previous run's. */
+  /** A run is in flight; for a moment, `results` may hold the previous run's. */
   running: boolean
 }
 
@@ -26,6 +32,8 @@ export function usePreviews(model: GraphModel | null, input: string): Previews {
   const [results, setResults] = useState<ReadonlyMap<string, NodeResult> | null>(null)
   const [running, setRunning] = useState(false)
   const cache = useRef(createCache())
+  /** The results last published, which a new run shows until its own land. */
+  const shown = useRef<ReadonlyMap<string, NodeResult> | null>(null)
 
   useEffect(() => {
     if (!/\S/.test(input)) {
@@ -42,6 +50,7 @@ export function usePreviews(model: GraphModel | null, input: string): Previews {
 
   useEffect(() => {
     if (!model || !sample) {
+      shown.current = null
       setResults(null)
       setRunning(false)
       return
@@ -49,14 +58,48 @@ export function usePreviews(model: GraphModel | null, input: string): Previews {
     const controller = new AbortController()
     const stages = model.nodes.map(toStage)
     setRunning(true)
-    runPipeline(stages, sample.text, runFilterInWorker, cache.current, controller.signal).then(
+
+    // Results show as each node settles, once a frame, so one slow stage
+    // doesn't hold back the others. Nodes not settled yet keep the previous
+    // run's result for a moment (most runs end well within it, so an edit
+    // doesn't flash "running…"), then show as running.
+    const previous = shown.current
+    const settled = new Map<string, NodeResult>()
+    let keepPrevious = true
+    let frame = 0
+    const publish = () => {
+      frame = 0
+      const next = new Map(keepPrevious && previous ? previous : [])
+      for (const [id, result] of settled) next.set(id, result)
+      shown.current = next
+      setResults(next)
+    }
+    const schedule = () => {
+      frame ||= requestAnimationFrame(publish)
+    }
+    const stale = setTimeout(() => {
+      keepPrevious = false
+      schedule()
+    }, KEEP_PREVIOUS_MS)
+
+    runPipeline(stages, sample.text, runFilterInWorker, cache.current, controller.signal, (id, result) => {
+      settled.set(id, result)
+      schedule()
+    }).then(
       (run) => {
+        cancelAnimationFrame(frame)
+        clearTimeout(stale)
+        shown.current = run.results
         setResults(run.results)
         setRunning(false)
       },
       () => {}, // abandoned for a newer run
     )
-    return () => controller.abort()
+    return () => {
+      controller.abort()
+      cancelAnimationFrame(frame)
+      clearTimeout(stale)
+    }
   }, [model, sample])
 
   return { sample, results, running }
