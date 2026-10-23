@@ -150,8 +150,8 @@ the editor (see Errors); no layout shift (see Layout); keyboard, focus and
 contrast (see Accessibility); narrow screens; big inputs and outputs, and
 code-splitting (see Big inputs); license notices (see Bundle); a 1 GB jq heap,
 so Run full handles a 50 MB input (see Engine limits). The app is dark only,
-which the user accepted as the quality bar's "Dark mode". What remains before
-the app is done is the "Open issues" list below.
+which the user accepted as the quality bar's "Dark mode". Every open issue
+recorded through Phase 9 is resolved (see Open issues).
 
 - **Execution.** `src/worker/engine.ts` drives jq 1.8.2 itself (the `jq-wasm`
   package, pinned exactly), so previews are what jq produces. The engine was
@@ -277,6 +277,15 @@ the app is done is the "Open issues" list below.
   Undo when there was nothing different to lose. Unreadable
   links, storage the browser refuses, and failed saves each post a notice in
   the header (store `notice`, a live region).
+  Tabs on the same document agree which saves it, over a BroadcastChannel
+  (messages between tabs, nothing stored, so within the persistence scope;
+  the user chose this): the tab that changed the document last. A change
+  claims saving; the other tabs stop saving, drop what they hadn't saved, and
+  show "Open in another tab: changes here aren't saved." (store
+  `savingElsewhere`, its own live region, so notices don't hide it) with
+  Save here instead (`saveHere`), which claims and saves this tab's document
+  at once. A change is only one that differs from what was saved, so opening
+  a tab (restoring) claims nothing; a saving tab releases on `pagehide`.
 - **JSON crosses the JS boundary as text, never as parsed JS values.** `JSON.parse`
   moves integer-like keys first and rounds big numbers. Input is jq's input
   format (zero or more JSON values, so several pasted documents are several
@@ -368,8 +377,9 @@ Known gaps, accepted for now so each phase could land. Each needs a fix, or an
 explicit decision to keep it, before the app is done. Remove an entry once it
 is resolved.
 
-1. **Several tabs overwrite each other.** Each tab saves its own document to the
-   same IndexedDB records, and the last save wins, with no warning.
+None open. Resolved in Phase 9: progressive previews; the last keystrokes
+kept on close; the stale-range race, now tested; Undo for a shared link;
+the 32,000-character link cap, kept by decision; one saving tab at a time.
 
 ### Toolchains on this machine
 
