@@ -1,10 +1,11 @@
 /// <reference types="vitest/config" />
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
+import { licenseNotices, workerLicenses } from './scripts/license-notices.ts'
 
 // https://vite.dev/config/
 export default defineConfig({
-  plugins: [react()],
+  plugins: [react(), licenseNotices()],
   // web-tree-sitter and jq-wasm ship .wasm; keep them out of the dependency
   // pre-bundle so they can locate their wasm at runtime.
   optimizeDeps: {
@@ -12,6 +13,7 @@ export default defineConfig({
   },
   worker: {
     format: 'es',
+    plugins: () => [workerLicenses()],
   },
   build: {
     rollupOptions: {
