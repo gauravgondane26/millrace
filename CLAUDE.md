@@ -233,7 +233,10 @@ the app is done is the "Open issues" list below.
   `graphEditSpec`, so it commits at once and undo covers it; Ctrl+Z on the canvas
   is the editor's undo. Edits re-project the editor's live text at the moment of
   the edit and name the text the node should hold, so a node that changed in the
-  last 200 ms is refused rather than spliced at a stale range.
+  last 200 ms is refused rather than spliced at a stale range, with a header
+  notice (`STALE_EDIT`). `e2e/editing.spec.ts` holds that window open with
+  Playwright's clock: an edit after typing moved the node lands right, and one
+  on a node whose own text changed is refused.
 - **Stage pane.** `src/ui/StagePane.tsx` shows the selected node as labelled
   fields; `core/parse/kinds.ts` says which: select's predicate, map's
   projection, sort_by/group_by's key, limit's count and generator, a pick path
@@ -250,7 +253,9 @@ the app is done is the "Open issues" list below.
   separate so typing jq never rewrites a big input), saved 300 ms after a change
   and at once when the page is hidden or unloading: then `JqEditor` also
   commits the text still inside its 200 ms debounce, and any change saves
-  immediately, so closing a tab right after typing keeps the last keystrokes. `src/ui/Boot.tsx` restores before the
+  immediately, so closing a tab right after typing keeps the last keystrokes.
+  Each save calls `transaction.commit()`: left to auto-commit, a save made as
+  the page unloads was lost about 40% of the time under load. `src/ui/Boot.tsx` restores before the
   app renders ("Opening your document…"), so the editor starts from the saved
   text with no undo step for it and the default `.` is never saved over it.
   Share (`src/ui/Share.tsx`) copies `#v1=<lz-string>` (`core/persist/share.ts`):
@@ -357,21 +362,17 @@ Known gaps, accepted for now so each phase could land. Each needs a fix, or an
 explicit decision to keep it, before the app is done. Remove an entry once it
 is resolved.
 
-1. **Stale-range race, unchecked in a browser.** A canvas edit within 200 ms of
-   typing in the editor is guarded and unit-tested (`edits.ts` refuses a node
-   whose text changed), but forcing that timing makes a flaky e2e test. Try it
-   by hand; if an edit ever lands in the wrong place, fix it.
-2. **Opening a share link loses the document it replaces.** At startup the
+1. **Opening a share link loses the document it replaces.** At startup the
    link's document overwrites the saved one, with no way back. In an open tab
    the jq can be undone (Ctrl+Z in the editor), but the input pane has no undo,
    so a link that carries input replaces yours for good. Any fix has to stay
    within the persistence scope (IndexedDB working document plus URL fragment,
    nothing else), or the scope has to change first.
-3. **Share links cap at 32,000 characters** (`MAX_FRAGMENT_LENGTH` in
+2. **Share links cap at 32,000 characters** (`MAX_FRAGMENT_LENGTH` in
    `core/persist/share.ts`); past that, a link carries the jq only and says so.
    Browsers take far longer URLs, but chat apps and address bars mangle them
    sooner. Settle the limit, or offer the longer link with a warning.
-4. **Several tabs overwrite each other.** Each tab saves its own document to the
+3. **Several tabs overwrite each other.** Each tab saves its own document to the
    same IndexedDB records, and the last save wins, with no warning.
 
 ### Toolchains on this machine
