@@ -144,8 +144,7 @@ program on the whole input.
 
 **Phase 9 (quality bar) in progress.** Done: compile errors placed on their
 node and in the editor (see Errors); no layout shift (see Layout); keyboard,
-focus and contrast (see Accessibility). Left: canvas readability on narrow
-screens, 50 MB inputs (virtualized views, code-splitting), license notices,
+focus and contrast (see Accessibility); narrow screens. Left: 50 MB inputs (virtualized views, code-splitting), license notices,
 and last, our own jq build with a larger heap.
 
 - **Execution.** `src/worker/engine.ts` drives jq 1.8.2 itself (the `jq-wasm`
@@ -288,9 +287,12 @@ and last, our own jq build with a larger heap.
   overflows the wasm stack.
 - **Known rough edges.** The main
   JS chunk is ~810 KB (246 KB gzipped): CodeMirror, React Flow and
-  web-tree-sitter; code-split it in the Quality-bar work. The canvas fits the
-  chain down to 70% zoom, then pans; at narrow widths (under ~1,100 px of canvas)
-  five or more nodes render small.
+  web-tree-sitter; code-split it in the Quality-bar work.
+- **Narrow screens.** The canvas fits the chain down to 70% zoom (readable
+  beats complete), then pans just far enough that the selected node (by
+  default the last, the result) is whole on screen; Tab focus pans to a node
+  too. The editor wraps long lines. Below 768 px (`md`) the panes stack in
+  one column of fixed heights that scrolls as a page.
 - **Accessibility.** `e2e/a11y.spec.ts` runs axe (WCAG 2.2 AA, no
   violations) in several states, checks every visible text's contrast with
   `e2e/contrast.ts` (axe can't judge the canvas, whose cards overlap the
