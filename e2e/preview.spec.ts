@@ -179,3 +179,15 @@ test.describe('runaway filters', () => {
     })
   }
 })
+
+test('a slow stage holds back only itself and what follows it', async ({ page }) => {
+  await preview(page, '[1, 2]', '.[0] | until(false; .) | . + 1')
+  // well before the stuck stage times out (10 s), the stages before it show
+  await expect(node(page, 'source: input')).toContainText('1 value · [1,2]', { timeout: 3000 })
+  await expect(node(page, 'custom: .[0]')).toContainText('1 value · 1', { timeout: 3000 })
+  await expect(node(page, 'custom: until(false; .)')).toContainText('running…')
+  await expect(node(page, 'custom: . + 1')).toContainText('running…')
+  // then it times out, and blocks the stage after it
+  await expect(node(page, 'custom: until(false; .)')).toContainText('Stopped after 10 s', { timeout: 15_000 })
+  await expect(node(page, 'custom: . + 1')).toContainText('blocked by an earlier error')
+})
