@@ -4,6 +4,7 @@
   "version": "0.0.0",
   "type": "module",
   "description": "Browser-only scratchpad for working out JSON transforms as jq.",
+  "license": "MIT",
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",

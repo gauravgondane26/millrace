@@ -155,9 +155,12 @@ scripts/       jq-wasm patch, grammar build, license notices
 - In the browser, `$ENV` is a placeholder environment, and modules
   (`import`/`include`) can't be loaded.
 
-## Acknowledgements
+## License
+
+[MIT](LICENSE) © 2026 Gaurav Gondane
 
 Built on [jq](https://jqlang.org) (MIT) and
 [tree-sitter-jq](https://github.com/flurie/tree-sitter-jq) (BSD-3-Clause),
-among others. Production builds include `licenses.txt`, linked from the app's
-header, with the notices of everything bundled.
+among others, each under its own license. Production builds include
+`licenses.txt`, linked from the app's header, with the notices of everything
+bundled.
