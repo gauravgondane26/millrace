@@ -352,6 +352,11 @@ each section with an example to try (see Guide).
   the wasm (texts in `licenses/`). A new dependency is picked up by itself;
   software compiled into a new wasm needs an entry in `COMPILED_IN`. The file
   exists only in builds, so the link 404s under `npm run dev`.
+- **Deploy.** `.github/workflows/deploy.yml` publishes to GitHub Pages
+  (<https://gauravgondane26.github.io/millrace/>) on every push to main, after
+  lint and unit tests; e2e runs locally only. CI builds with
+  `--base=/millrace/`; the default base stays `/`. To reproduce that build in
+  Git Bash, set `MSYS_NO_PATHCONV=1`, or it rewrites the path.
 - **Narrow screens.** The canvas fits the chain down to 70% zoom (readable
   beats complete), then pans just far enough that the selected node (by
   default the last, the result) is whole on screen; Tab focus pans to a node

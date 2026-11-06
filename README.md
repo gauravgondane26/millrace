@@ -4,6 +4,8 @@ A browser-only scratchpad for working out JSON transforms with jq. Paste a JSON
 payload, build the transform as jq text or as a node graph, see the data after
 every stage, and copy out real jq you can run anywhere.
 
+**Try it: <https://gauravgondane26.github.io/millrace/>**
+
 ![A jq program as a pipeline: an object construction fans out into a lane per key, every card previewing its stage's output](docs/screenshots/pipeline.png)
 
 The graph and the jq text are two views of the same program, and editing either
